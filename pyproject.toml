@@ -1,0 +1,20 @@
+[project]
+name = "forge"
+version = "0.1.0"
+description = "A terminal-native, agentic coding assistant."
+authors = [{ name = "Local Coder" }]
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "httpx>=0.24.0",
+    "jinja2",
+    "prompt-toolkit"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+forge = "forge_cli.main:main"
