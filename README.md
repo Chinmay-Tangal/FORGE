@@ -3,8 +3,17 @@
 
 Forge is a highly modular, event-sourced, and terminal-native AI coding assistant. Designed as a lightweight, fully local alternative to cloud-heavy agents like Claude Code or OpenHands, Forge is optimized to run on consumer-grade hardware (e.g., 8GB VRAM) without sacrificing reasoning capabilities.
 
----
+```
+███████╗ ██████╗ ██████╗  ██████╗ ███████╗
+██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
+█████╗  ██║   ██║██████╔╝██║  ███╗█████╗
+██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
+██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
+╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝  Your ULTIMATE Terminal-native local agentic coding assistant!!!
 
+```
+
+---
 ## Core Philosophy & Architecture
 
 Forge is built on strict architectural invariants designed for predictability, crash recovery, and extensibility:
