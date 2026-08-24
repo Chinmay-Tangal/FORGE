@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Forge runtime state
+.forge/
+*.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Test artifacts
+forge_eval/results_*.json
+test_output.txt

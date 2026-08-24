@@ -1,0 +1,18 @@
+"""
+forge.tools — Built-in tool registry.
+
+Imports all tool modules so their @register decorators fire,
+then exposes the populated registry for the agent to consume.
+"""
+from forge.tools.registry import ToolRegistry
+
+# A single shared registry instance populated by the tool modules below.
+registry = ToolRegistry()
+
+# Side-effect imports: each module calls registry.register() on import.
+import forge.tools.filesystem   # noqa: F401, E402
+import forge.tools.git          # noqa: F401, E402
+import forge.tools.shell        # noqa: F401, E402
+import forge.tools.memory_tools # noqa: F401, E402
+
+__all__ = ["registry", "ToolRegistry"]
