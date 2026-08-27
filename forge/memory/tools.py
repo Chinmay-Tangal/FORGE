@@ -1,10 +1,11 @@
 """
-forge/tools/memory_tools.py — Archival memory tools.
+forge/memory/tools.py — Archival memory tools.
 
 Registered tools: memory_search, memory_insert, memory_evict
 
 These tools expose the MemoryStore's archival memory to the LLM, enabling
 it to persist and retrieve information across conversation turns and sessions.
+Co-located with memory/store.py since these tools directly wrap the store.
 """
 from __future__ import annotations
 

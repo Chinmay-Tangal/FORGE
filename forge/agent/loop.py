@@ -1,5 +1,5 @@
 """
-forge/agent.py — Core agent loop.
+forge/agent/loop.py — Core Agent class and agentic execution loop.
 
 The Agent owns the LLM → tool-dispatch → observation cycle. It is stateless
 between instantiations: all state lives in ConversationState.
@@ -28,7 +28,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from forge.config import Config
 from forge.core.condenser import LLMSummarizingCondenser
 from forge.core.events import (
-    Event, Message, ToolCallAction, ToolResultObservation,
+    ConfirmationRequiredEvent, Event, Message, ToolCallAction, ToolResultObservation,
 )
 from forge.core.state import ConversationState
 from forge.llm.router import RouterLLM
@@ -36,20 +36,12 @@ from forge.security.analyzer import SecurityAnalyzer
 from forge.security.hooks import HookRunner
 from forge.skills.loader import SkillLoader
 from forge.tools.registry import ToolRegistry
+from forge.agent import builder as _builder
+from forge.agent import executor as _executor
 
 logger = logging.getLogger(__name__)
 
 _TOOL_CALLS_SENTINEL = "\x00TOOL_CALLS\x00"
-
-
-class ConfirmationRequiredEvent(Event):
-    """Emitted when a tool call requires user confirmation before it can execute."""
-
-    source: str = "system"
-    tool_name: str
-    tool_args: Dict[str, Any]
-    risk: str
-    tool_call_raw: Dict[str, Any]  # original tool_call dict; stored for resume
 
 
 class Agent:
@@ -104,104 +96,27 @@ class Agent:
         # Pending tool call waiting for user confirmation
         self._pending: Optional[Dict[str, Any]] = None
 
-    # Context assembly
+    # Context assembly — delegates to builder module
     def _build_messages(self) -> List[Dict[str, str]]:
-        messages: List[Dict[str, str]] = [
-            {"role": "system", "content": self.system_prompt}
-        ]
-        skill_ctx = self.skill_loader.build_system_context(self._last_user_message)
-        if skill_ctx:
-            messages.append({"role": "system", "content": skill_ctx})
-        if self.state.working_context:
-            messages.append({
-                "role": "system",
-                "content": f"Condensed history:\n{self.state.working_context}",
-            })
-        for msg in self.state.get_recent_messages(limit=20):
-            messages.append({"role": msg.role, "content": msg.content})
-        return messages
+        return _builder.build_messages(self)
 
     def _maybe_condense(self) -> None:
-        """Evict the oldest 30 % of events if the token budget is exceeded."""
-        total = self.llm.count_tokens(
-            " ".join(
-                getattr(e, "content", "") or str(e.model_dump())
-                for e in self.state.events
-            )
-        )
-        if total < self.context_limit:
-            return
-        evict_n = max(1, len(self.state.events) // 3)
-        to_evict, self.state.events = self.state.events[:evict_n], self.state.events[evict_n:]
-        try:
-            self.state.working_context = self.condenser.condense(
-                to_evict, self.state.working_context
-            )
-            logger.info("Condensed %d events.", evict_n)
-        except Exception as exc:
-            logger.warning("Condenser failed (%s). Events evicted without summary.", exc)
+        """Evict the oldest 33 % of events if the token budget is exceeded."""
+        return _builder.maybe_condense(self)
 
-    # Tool execution
+    # Tool execution — delegates to executor module
     def _execute_tool(self, tc: Dict[str, Any]) -> Generator[Event, None, None]:
         """Execute one tool call dict and yield its action + observation events."""
-        func_name = tc["function"]["name"]
-        try:
-            args = json.loads(tc["function"]["arguments"])
-        except json.JSONDecodeError:
-            args = {}
+        yield from _executor.execute_tool(self, tc)
 
-        action = ToolCallAction(tool_name=func_name, tool_args=args)
-        self.state.append_event(action)
-        yield action
-
-        self.hook_runner.run_pre_hook(func_name, args)
-
-        try:
-            result = self.registry.execute(func_name, args)
-            obs = ToolResultObservation(
-                tool_name=func_name,
-                tool_call_id=tc.get("id", ""),
-                content=str(result),
-            )
-        except Exception as exc:
-            obs = ToolResultObservation(
-                tool_name=func_name,
-                tool_call_id=tc.get("id", ""),
-                content=str(exc),
-                success=False,
-            )
-
-        self.hook_runner.run_post_hook(func_name, args, obs.content)
-        self.state.append_event(obs)
-        yield obs
-
-        # Feed result back as a user message so the next LLM call sees it
-        self.state.append_event(
-            Message(role="user", content=f"Tool `{func_name}` returned:\n{obs.content}")
-        )
-
-    # Confirmation flow
+    # Confirmation flow — delegates to executor module
     def resume_confirmed(self) -> Generator[Event, None, None]:
         """Execute the pending tool after user confirms it."""
-        if not self._pending:
-            return
-        tc, self._pending = self._pending, None
-        self.state.status = "active"
-        yield from self._execute_tool(tc)
+        yield from _executor.resume_confirmed(self)
 
     def resume_denied(self) -> Generator[Event, None, None]:
         """Skip the pending tool after user denies it."""
-        if not self._pending:
-            return
-        func_name = self._pending["function"]["name"]
-        self._pending = None
-        self.state.status = "active"
-        msg = Message(
-            role="system",
-            content=f"User denied `{func_name}`. Skipping that action.",
-        )
-        self.state.append_event(msg)
-        yield msg
+        yield from _executor.resume_denied(self)
 
     # Core step
     def step(self, require_frontier: bool = False) -> Generator[Event, None, None]:

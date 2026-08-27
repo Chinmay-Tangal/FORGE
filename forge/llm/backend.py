@@ -12,6 +12,8 @@ from typing import Any, Dict, Generator, List, Optional
 
 import httpx
 
+from forge.utils import count_tokens as _count_tokens
+
 logger = logging.getLogger(__name__)
 
 # Sentinel injected into the streaming generator when buffered tool calls
@@ -156,7 +158,6 @@ class LLMBackend:
         """
         Rough token estimate without a tokenizer dependency.
 
-        Uses a 1.3 word-per-token multiplier — accurate enough for
-        triggering context eviction on local hardware.
+        Delegates to :func:`forge.utils.count_tokens`.
         """
-        return int(len(text.split()) * 1.3)
+        return _count_tokens(text)

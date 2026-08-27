@@ -121,18 +121,17 @@ class Config:
         cfg = cls()
         if not os.path.isfile(path):
             logger.debug("No config file at %s — using defaults.", path)
-            return cfg
-        try:
-            data = _load_toml(path)
-        except Exception as exc:
-            logger.warning("Failed to parse %s: %s — using defaults.", path, exc)
-            return cfg
-        for key, value in data.items():
-            if hasattr(cfg, key):
-                setattr(cfg, key, value)
-            else:
-                logger.warning("Unknown config key %r in %s — ignoring.", key, path)
-        # Environment variable override
+        else:
+            try:
+                data = _load_toml(path)
+                for key, value in data.items():
+                    if hasattr(cfg, key):
+                        setattr(cfg, key, value)
+                    else:
+                        logger.warning("Unknown config key %r in %s — ignoring.", key, path)
+            except Exception as exc:
+                logger.warning("Failed to parse %s: %s — using defaults.", path, exc)
+        # Environment variable override (always applied, regardless of file presence)
         if cfg.frontier_api_key is None:
             cfg.frontier_api_key = os.environ.get("FORGE_FRONTIER_KEY")
         return cfg

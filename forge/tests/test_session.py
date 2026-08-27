@@ -11,7 +11,7 @@ from forge.session import SessionManager, generate_session_id
 def test_session_id_format():
     sid = generate_session_id()
     parts = sid.split("-")
-    assert len(parts) == 4  # YYYYMMDD, HHMMSS, 8hex → split on 3 dashes
+    assert len(parts) == 3  # YYYYMMDD, HHMMSS, 8hex
     assert len(parts[0]) == 8   # date
 
 

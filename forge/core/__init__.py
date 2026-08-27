@@ -4,6 +4,7 @@ from forge.core.events import (
     ToolCallAction, ToolResultObservation,
     FileReadAction, FileReadObservation,
     ShellCommandAction, ShellCommandObservation,
+    ConfirmationRequiredEvent,
 )
 from forge.core.state import ConversationState
 from forge.core.condenser import LLMSummarizingCondenser
@@ -13,5 +14,6 @@ __all__ = [
     "ToolCallAction", "ToolResultObservation",
     "FileReadAction", "FileReadObservation",
     "ShellCommandAction", "ShellCommandObservation",
+    "ConfirmationRequiredEvent",
     "ConversationState", "LLMSummarizingCondenser",
 ]

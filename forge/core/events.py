@@ -77,3 +77,13 @@ class ShellCommandObservation(Observation):
     observation_type: str = "shell_command"
     command: str
     exit_code: int
+
+
+class ConfirmationRequiredEvent(Event):
+    """Emitted when a tool call requires user confirmation before it can execute."""
+
+    source: str = "system"
+    tool_name: str
+    tool_args: Dict[str, Any]
+    risk: str
+    tool_call_raw: Dict[str, Any]  # original tool_call dict; stored for resume

@@ -13,6 +13,6 @@ registry = ToolRegistry()
 import forge.tools.filesystem   # noqa: F401, E402
 import forge.tools.git          # noqa: F401, E402
 import forge.tools.shell        # noqa: F401, E402
-import forge.tools.memory_tools # noqa: F401, E402
+import forge.memory.tools       # noqa: F401, E402  — memory tools live beside the store they wrap
 
 __all__ = ["registry", "ToolRegistry"]

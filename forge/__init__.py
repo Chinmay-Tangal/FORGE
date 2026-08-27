@@ -10,6 +10,6 @@ Public API surface for library consumers:
 __version__ = "0.2.0"
 __all__ = ["Agent", "Config", "SessionManager"]
 
-from forge.agent import Agent
+from forge.agent.loop import Agent
 from forge.config import Config
 from forge.session import SessionManager
