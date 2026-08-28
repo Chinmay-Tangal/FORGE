@@ -48,10 +48,8 @@ vector = [
 forge = "forge.cli.main:main"
 
 [project.urls]
-Homepage     = []
-Repository   = []
-Issues       = []
-Changelog    = []
+Homepage  = "https://github.com/Chinmay-Tangal/FORGE"
+Repository = "https://github.com/Chinmay-Tangal/FORGE"
 
 [build-system]
 requires      = ["setuptools>=61.0", "wheel"]
