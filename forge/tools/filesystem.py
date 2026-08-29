@@ -82,7 +82,7 @@ def write_file(path: str, content: str) -> str:
 )
 def append_file(path: str, content: str) -> str:
     try:
-        abs_path = os.path.join(_ws.base_dir, path)
+        abs_path = _ws._resolve(path)
         os.makedirs(os.path.dirname(abs_path) or ".", exist_ok=True)
         with open(abs_path, "a", encoding="utf-8") as fh:
             fh.write(content)
@@ -104,7 +104,7 @@ def append_file(path: str, content: str) -> str:
     },
 )
 def delete_file(path: str) -> str:
-    abs_path = os.path.join(_ws.base_dir, path)
+    abs_path = _ws._resolve(path)
     if not os.path.exists(abs_path):
         return f"File '{path}' does not exist."
     try:
@@ -117,13 +117,13 @@ def delete_file(path: str) -> str:
 # list_dir
 @registry.register(
     name="list_dir",
-    description="List the contents of a directory, showing file sizes and types.",
+    description="List the contents of a directory, showing file sizes and types. Defaults to '.' (workspace root).",
     parameters={
         "type": "object",
         "properties": {
             "path": {
                 "type": "string",
-                "description": "Directory path relative to workspace root. Defaults to '.'.",
+                "description": "Directory path relative to workspace root. Defaults to '.' (current directory).",
             },
         },
         "required": [],
@@ -131,7 +131,7 @@ def delete_file(path: str) -> str:
 )
 def list_dir(path: str = ".") -> str:
     try:
-        abs_path = os.path.join(_ws.base_dir, path)
+        abs_path = _ws._resolve(path or ".")
         entries = sorted(os.scandir(abs_path), key=lambda e: (not e.is_dir(), e.name))
     except FileNotFoundError:
         return f"Directory '{path}' not found."
@@ -141,7 +141,8 @@ def list_dir(path: str = ".") -> str:
     if not entries:
         return f"'{path}' is empty."
 
-    lines = [f"Contents of {path}:"]
+    display_path = os.path.relpath(abs_path, _ws.base_dir) if abs_path != _ws.base_dir else "."
+    lines = [f"Contents of {display_path}:"]
     for entry in entries[:200]:
         if entry.is_dir():
             lines.append(f"  [dir]  {entry.name}/")
@@ -172,7 +173,7 @@ def list_dir(path: str = ".") -> str:
             "pattern": {"type": "string", "description": "Glob pattern, e.g. '**/*.py'."},
             "directory": {
                 "type": "string",
-                "description": "Sub-directory to search in. Defaults to workspace root.",
+                "description": "Sub-directory to search in. Defaults to workspace root ('.').",
             },
         },
         "required": ["pattern"],
@@ -180,7 +181,7 @@ def list_dir(path: str = ".") -> str:
 )
 def find_files(pattern: str, directory: str = ".") -> str:
     try:
-        base = os.path.join(_ws.base_dir, directory)
+        base = _ws._resolve(directory or ".")
         matches = glob.glob(os.path.join(base, pattern), recursive=True)
     except Exception as exc:
         return f"Error finding files: {exc}"
@@ -206,7 +207,7 @@ def find_files(pattern: str, directory: str = ".") -> str:
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Text to search for (case-insensitive)."},
-            "directory": {"type": "string", "description": "Directory to search. Defaults to workspace root."},
+            "directory": {"type": "string", "description": "Directory to search. Defaults to workspace root ('.')."},
             "file_glob": {
                 "type": "string",
                 "description": "Glob to filter files, e.g. '**/*.py'. Defaults to all files.",
@@ -217,7 +218,7 @@ def find_files(pattern: str, directory: str = ".") -> str:
 )
 def grep(pattern: str, directory: str = ".", file_glob: str = "**/*") -> str:
     try:
-        base = os.path.join(_ws.base_dir, directory)
+        base = _ws._resolve(directory or ".")
         files = [f for f in glob.glob(os.path.join(base, file_glob), recursive=True) if os.path.isfile(f)]
     except Exception as exc:
         return f"Error during grep setup: {exc}"
@@ -264,7 +265,7 @@ def grep(pattern: str, directory: str = ".", file_glob: str = "**/*") -> str:
     },
 )
 def patch_file(path: str, patch: str) -> str:
-    abs_path = os.path.join(_ws.base_dir, path)
+    abs_path = _ws._resolve(path)
     if not os.path.isfile(abs_path):
         return f"Error: '{path}' not found."
     try:

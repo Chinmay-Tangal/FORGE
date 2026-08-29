@@ -203,13 +203,16 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
         agent._last_user_message = user_input
         state.status = "active"
 
-        # Run (blocking — stream_run future work)
+        # Run agent loop with live event rendering
+        events = []
         with console.status("[bold green]Thinking…[/bold green]", spinner="dots"):
             try:
-                events = list(agent.run(require_frontier=require_frontier))
+                for event in agent.run(require_frontier=require_frontier):
+                    events.append(event)
+                    if not isinstance(event, Message):
+                        render_event(event)
             except Exception as exc:
                 console.print(f"[bold red]Agent error:[/bold red] {exc}")
-                events = []
 
         # Confirmation UX
         if state.status == "paused" and agent._pending:
@@ -231,7 +234,8 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
                         render_event(evt)
         else:
             for event in events:
-                render_event(event)
+                if isinstance(event, Message):
+                    render_event(event)
 
         # Reset frontier toggle after one turn
         if require_frontier:

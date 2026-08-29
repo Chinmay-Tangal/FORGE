@@ -43,19 +43,58 @@ logger = logging.getLogger(__name__)
 
 _TOOL_CALLS_SENTINEL = "\x00TOOL_CALLS\x00"
 
+import os as _os
 import re as _re
+
+_KNOWN_TOOLS = {
+    "read_file", "write_file", "append_file", "delete_file",
+    "list_dir", "find_files", "grep", "patch_file",
+    "shell", "git_status", "git_diff", "git_log", "git_commit",
+    "memory_search", "memory_insert", "memory_evict",
+}
+
 
 def _parse_text_tool_calls(text: str) -> list:
     """
-    Fallback parser: extract tool calls from plain text content when the LLM
-    (e.g. Ollama) embeds them as JSON instead of returning structured tool_calls.
-
-    Handles two common formats:
-    - {"name": "write_file", "arguments": {...}}
-    - {"name": "write_file", "parameters": {...}}
+    Extract tool calls from plain text content when the LLM embeds them
+    in text (JSON, markdown code blocks, XML tags, or function call syntax).
     """
+    if not text or not text.strip():
+        return []
+
     results = []
-    # Find all top-level JSON objects in the text
+
+    # 1. Look for XML tags like <tool_call>...</tool_call> or <function_call>...</function_call>
+    for match in _re.finditer(r"<(?:tool_call|function_call)>(.*?)</(?:tool_call|function_call)>", text, _re.DOTALL):
+        try:
+            obj = json.loads(match.group(1).strip())
+            name = obj.get("name") or obj.get("tool") or obj.get("function")
+            args = obj.get("arguments") or obj.get("parameters") or obj.get("input") or {}
+            if name in _KNOWN_TOOLS:
+                args_str = json.dumps(args) if isinstance(args, dict) else str(args)
+                results.append({"id": f"tc_{len(results)}", "type": "function", "function": {"name": name, "arguments": args_str}})
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    if results:
+        return results
+
+    # 2. Look for JSON markdown blocks ```json ... ```
+    for match in _re.finditer(r"```(?:json)?\s*(\{.*?\})\s*```", text, _re.DOTALL):
+        try:
+            obj = json.loads(match.group(1).strip())
+            name = obj.get("name") or obj.get("tool")
+            args = obj.get("arguments") or obj.get("parameters") or {}
+            if name in _KNOWN_TOOLS:
+                args_str = json.dumps(args) if isinstance(args, dict) else str(args)
+                results.append({"id": f"tc_{len(results)}", "type": "function", "function": {"name": name, "arguments": args_str}})
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    if results:
+        return results
+
+    # 3. Find raw JSON objects in the text
     for match in _re.finditer(r'\{', text):
         start = match.start()
         depth = 0
@@ -68,21 +107,67 @@ def _parse_text_tool_calls(text: str) -> list:
                     candidate = text[start:start + i + 1]
                     try:
                         obj = json.loads(candidate)
-                        name = obj.get("name")
+                        name = obj.get("name") or obj.get("tool")
                         args = obj.get("arguments") or obj.get("parameters") or {}
-                        if name and isinstance(name, str):
-                            if isinstance(args, dict):
-                                args_str = json.dumps(args)
-                            else:
-                                args_str = str(args)
+                        if name and name in _KNOWN_TOOLS:
+                            args_str = json.dumps(args) if isinstance(args, dict) else str(args)
                             results.append({
-                                "id": f"text_{start}",
+                                "id": f"tc_{len(results)}",
                                 "type": "function",
                                 "function": {"name": name, "arguments": args_str},
                             })
                     except (json.JSONDecodeError, ValueError):
                         pass
                     break
+
+    if results:
+        return results
+
+    # 4. Fallback: Parse Python-style function call syntax e.g. read_file(path="README.md") or list_dir(".")
+    for fn_name in _KNOWN_TOOLS:
+        pattern = rf"(?:^|\n|\s|[→>`]){fn_name}\s*\((.*?)\)"
+        for m in _re.finditer(pattern, text, _re.DOTALL):
+            arg_content = m.group(1).strip()
+            args_dict = {}
+            if not arg_content:
+                args_dict = {}
+            elif arg_content.startswith("{") and arg_content.endswith("}"):
+                try:
+                    args_dict = json.loads(arg_content)
+                except Exception:
+                    pass
+            else:
+                # Positional string argument e.g. read_file("foo.py") or read_file('foo.py')
+                str_match = _re.match(r"^['\"]([^'\"]+)['\"]$", arg_content)
+                if str_match:
+                    val = str_match.group(1)
+                    if fn_name in ("read_file", "delete_file", "list_dir", "patch_file"):
+                        args_dict = {"path": val}
+                    elif fn_name in ("shell",):
+                        args_dict = {"command": val}
+                    elif fn_name in ("find_files", "grep"):
+                        args_dict = {"pattern": val}
+                    elif fn_name in ("memory_search", "memory_insert"):
+                        args_dict = {"query" if fn_name == "memory_search" else "content": val}
+                else:
+                    # Keyword arguments e.g. path="README.md"
+                    for kw in _re.finditer(r"([a-zA-Z_]\w*)\s*=\s*(['\"][^'\"]*['\"]|\d+|True|False)", arg_content):
+                        k, v = kw.group(1), kw.group(2)
+                        if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                            args_dict[k] = v[1:-1]
+                        elif v.isdigit():
+                            args_dict[k] = int(v)
+                        elif v in ("True", "False"):
+                            args_dict[k] = (v == "True")
+
+            if args_dict or fn_name in ("list_dir", "git_status", "git_diff", "git_log"):
+                results.append({
+                    "id": f"tc_{len(results)}",
+                    "type": "function",
+                    "function": {"name": fn_name, "arguments": json.dumps(args_dict)},
+                })
+                break
+
     return results
 
 
@@ -126,13 +211,24 @@ class Agent:
         self.skill_loader = SkillLoader(skills_dir=cfg.skills_dir)
         self.condenser = LLMSummarizingCondenser(llm=llm.local_llm)
 
+        cwd = _os.path.abspath(_os.getcwd())
         self.system_prompt = (
-            "You are Forge, a terminal-native agentic coding assistant. "
-            "You MUST use tools to perform ALL file and shell operations. "
-            "NEVER print code as plain text — always call write_file or patch_file to create/modify files. "
-            "NEVER describe what commands to run — always call run_shell to execute them. "
-            "When asked to create a project or file, immediately call write_file with the full content. "
-            "Think step-by-step, use tools for every action, and confirm results with read_file or run_shell."
+            "You are Forge, an autonomous terminal-native AI coding assistant and expert software engineer, modeled after Claude Code.\n"
+            f"Current working directory: {cwd}\n"
+            f"Operating system: {'Windows' if _os.name == 'nt' else 'POSIX'}\n\n"
+            "CORE BEHAVIOR RULES:\n"
+            "1. BE AUTONOMOUS AND PROACTIVE: Never ask the user for information you can find yourself. "
+            "Never ask the user for file paths, directory contents, or permission to read files. "
+            "Use your tools (list_dir, find_files, grep, read_file, shell, git_status) to explore the workspace and inspect code directly.\n"
+            "2. NO CONVERSATIONAL FILLER: Do NOT say 'I will read the file', 'Please provide the path', or 'To list files I will call list_dir'. "
+            "Execute the tool calls IMMEDIATELY.\n"
+            "3. MULTI-STEP EXECUTION: Perform complete multi-step workflows autonomously. "
+            "For example: inspect directory -> read relevant files -> make edits with write_file or patch_file -> run tests with shell -> give final summary.\n"
+            "4. FILE PATHS: All relative paths are resolved relative to the current working directory. "
+            "To inspect the current directory, call list_dir(path='.'). To read a file, use its relative path (e.g. 'README.md', 'forge/cli/main.py') or absolute path.\n"
+            "5. EDITING CODE: Prefer patch_file for targeted edits and write_file for creating new files or full overwrites. "
+            "Always inspect existing files with read_file before patching them.\n"
+            "6. SHELL COMMANDS: Use the `shell` tool to run commands (builds, tests, linters, installs)."
         )
 
         # Set by the CLI to the text of the last user message for skill triggering

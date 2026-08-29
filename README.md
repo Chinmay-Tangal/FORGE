@@ -1,109 +1,147 @@
-# Forge: Advanced Local Agentic Coding Assistant
+# Forge: Autonomous Local Agentic Coding Assistant
 
-
-Forge is a highly modular, event-sourced, and terminal-native AI coding assistant. Designed as a lightweight, fully local alternative to cloud-heavy agents like Claude Code or OpenHands, Forge is optimized to run on consumer-grade hardware (e.g., 8GB VRAM) without sacrificing reasoning capabilities.
+Forge is a high-performance, event-sourced, terminal-native AI coding assistant designed to give you the autonomous capabilities of **Claude Code** running **100% locally** on consumer hardware (e.g., RTX 4060/5060 8GB VRAM).
 
 ```
 ███████╗ ██████╗ ██████╗  ██████╗ ███████╗
 ██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
-█████╗  ██║   ██║██████╔╝██║  ███╗█████╗
-██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
+█████╗  ██║   ██║██████╔╝██║  ███╗█████╗  
+██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  
 ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
-╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝  Your ULTIMATE Terminal-native local agentic coding assistant!!!
-
+╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝  Autonomous Terminal AI Coding Assistant
 ```
 
 ---
-## Core Philosophy & Architecture
 
-Forge is built on strict architectural invariants designed for predictability, crash recovery, and extensibility:
+## ⚡ Key Highlights
 
-1. **Immutable Event Sourcing:** Every interaction—user prompts, LLM generations, and tool observations—is appended to an immutable Pydantic `ConversationState` event log. 
-2. **Context Window Protection:** A built-in `LLMSummarizingCondenser` automatically compresses the working context, preventing context-window exhaustion on local 8k models.
-3. **Multi-Tiered Memory:** Implements a MemGPT-style OS memory hierarchy. Working memory is dynamic, while Archival memory is persisted via SQLite across sessions.
-4. **Isolated Workspaces:** File and shell operations are abstracted through `LocalWorkspace` and `DockerWorkspace` backends.
-
-## Advanced Capabilities
-
-### Hybrid LLM Routing (`RouterLLM`)
-Run 95% of your tasks locally with zero latency or cost. When you hit a complex architectural problem, type `/frontier` to dynamically route the next turn to a frontier model (GPT-4o, Claude 3.5 Sonnet) while seamlessly sharing the same event log and context.
-
-### Sandboxed Tool Execution & Security
-By default, Forge uses a sophisticated `SecurityAnalyzer`. High-risk commands (like `rm`, `sudo`, or external network calls) automatically pause the agent loop and request TUI confirmation. 
-- Use `/policy auto` for intelligent risk assessment.
-- Use `/policy strict` to enforce confirmation on *all* tool calls.
+- **Autonomous Proactive Agent**: Inspects directories, reads files, writes patches, executes tests, and verifies output automatically without asking for manual file inputs.
+- **Local GPU Acceleration**: Powered by quantized models (e.g. Qwen2.5-Coder 7B) through Ollama or llama.cpp with CUDA compute acceleration.
+- **Hybrid Frontier Routing (`/frontier`)**: Run 95% of your coding turns locally for free with zero latency. Type `/frontier` to seamlessly route complex architectural reasoning turns to Claude 3.5 Sonnet or GPT-4o while preserving the same conversation context and event log.
+- **Immutable Event Sourcing**: Every interaction, tool invocation, and observation is persisted in an append-only JSONL log. Easily inspect (`/history`), resume (`/resume`), and recover from any crash.
+- **Context-Window Protection (`LLMSummarizingCondenser`)**: Automatically summarizes and condenses history to prevent token exhaustion on 8k context models.
+- **Multi-Tiered Memory**: Short-term working context + SQLite-backed persistent archival store across sessions (`/memory`).
+- **Security & Sandboxing**: Configurable security analyzer (`/policy auto` or `/policy strict`) that identifies high-risk actions (e.g. `rm`, `sudo`, destructive patches) and requests confirmation before execution.
 
 ---
 
-## Extending Forge
+## 🛠️ Built-in Tools
 
-Forge's decorator-based tool registry makes it incredibly easy to extend. The agent automatically infers OpenAI-compatible JSON schemas from your Pydantic parameters.
+Forge comes with a comprehensive set of 16 built-in tools:
 
-### Creating a Custom Tool
+| Category | Tools | Description |
+| :--- | :--- | :--- |
+| **Filesystem** | `read_file`, `write_file`, `append_file`, `delete_file`, `list_dir`, `find_files`, `grep`, `patch_file` | Read, create, search, glob, delete, and apply unified diffs across the workspace with full POSIX & Windows path support. |
+| **Shell & Execution** | `shell` | Execute shell commands, test runners (`pytest`, `npm test`), package managers, and build scripts. |
+| **Git Integration** | `git_status`, `git_diff`, `git_log`, `git_commit` | Inspect repository state, view staged/unstaged changes, inspect history, and create atomic commits. |
+| **Archival Memory** | `memory_search`, `memory_insert`, `memory_evict` | Store and retrieve persistent facts, project rules, and notes across sessions. |
 
-Simply import the `registry` and use the decorator in `forge/tools/`:
+---
+
+## 🚀 Getting Started
+
+### 1. Prerequisites
+- Python 3.10+
+- [Ollama](https://ollama.com/) (recommended for Windows with NVIDIA GPUs) or [llama.cpp](https://github.com/ggerganov/llama.cpp)
+
+### 2. Import / Download the Model
+Download or import `Qwen2.5-Coder-7B-Instruct` (Q4_K_M GGUF):
+
+```powershell
+# Create Modelfile pointing to your GGUF
+Set-Content Modelfile 'FROM "C:\path\to\qwen2.5-coder-7b-instruct-q4_k_m.gguf"'
+
+# Import into Ollama
+ollama create qwen2.5-coder -f Modelfile
+```
+
+### 3. Start the Backend Server
+```powershell
+# In PowerShell (Terminal 1)
+ollama serve
+
+# In PowerShell (Terminal 2 - loads model to GPU)
+ollama run qwen2.5-coder
+```
+
+### 4. Install Forge
+```bash
+# Clone and install in editable mode
+git clone https://github.com/Chinmay-Tangal/FORGE.git
+cd FORGE
+pip install -e .
+```
+
+### 5. Launch Forge in Any Project
+```bash
+cd /d/your-project-directory
+forge --url http://localhost:11434/v1 --model qwen2.5-coder
+```
+
+---
+
+## ⚙️ Configuration (`.forge/config.toml`)
+
+Forge automatically looks for `.forge/config.toml` in your project or home directory:
+
+```toml
+local_llm_url    = "http://localhost:11434/v1"
+local_model      = "qwen2.5-coder"
+security_policy  = "auto"           # 'auto' (confirm high-risk) or 'strict' (confirm all)
+context_limit    = 6000             # Token threshold before automatic memory condensation
+max_iterations   = 30               # Maximum autonomous tool iterations per turn
+
+# Optional Frontier Model
+frontier_llm_url = "https://api.anthropic.com/v1"
+frontier_model   = "claude-3-5-sonnet-20241022"
+frontier_api_key = "sk-ant-..."      # Or set FORGE_FRONTIER_KEY env var
+```
+
+---
+
+## ⌨️ CLI Slash Commands
+
+| Command | Action | Description |
+| :--- | :--- | :--- |
+| `/help` | **Help Menu** | Display all available commands and shortcuts. |
+| `/status` | **Session Status** | View event count, token usage, cost, and context size. |
+| `/history` | **Event Log** | View the last 10 actions and observations in a formatted table. |
+| `/frontier` | **Frontier Toggle** | Escalate the next turn to a frontier model (Claude / GPT-4o). |
+| `/policy` | **Security Policy** | Switch between `/policy auto` and `/policy strict`. |
+| `/memory` | **Memory Search** | `/memory <query>` to search persistent SQLite archival storage. |
+| `/sessions`| **Session List** | List saved session logs and recovery checkpoints. |
+| `/resume` | **Session Resume** | `/resume <id>` to resume a past session. |
+| `/clear` | **Clear Context** | Flush working-memory summaries for a clean turn. |
+| `/skills` | **Reload Skills** | Reload custom Markdown skills from `.forge/skills/`. |
+
+---
+
+## 🧩 Extending Forge (Custom Tools)
+
+Register custom tools in seconds using the `@registry.register` decorator:
 
 ```python
 from forge.tools import registry
 
 @registry.register(
-    name="npm_install",
-    description="Installs a package via npm in the workspace.",
+    name="npm_test",
+    description="Runs tests using npm test in the current workspace.",
     parameters={
         "type": "object",
         "properties": {
-            "package_name": {"type": "string", "description": "The npm package to install"},
-            "is_dev": {"type": "boolean", "description": "Install as dev dependency"}
+            "test_path": {"type": "string", "description": "Optional path to a test file."}
         },
-        "required": ["package_name"]
+        "required": []
     }
 )
-def npm_install(package_name: str, is_dev: bool = False) -> str:
-    flag = "-D" if is_dev else ""
-    # Abstracted workspace execution (safe for Local or Docker)
-    exit_code, output = _ws.run_command(f"npm install {flag} {package_name}")
-    return output if exit_code == 0 else f"Failed: {output}"
+def npm_test(test_path: str = "") -> str:
+    cmd = f"npm test {test_path}" if test_path else "npm test"
+    exit_code, output = _ws.run_command(cmd)
+    return output if exit_code == 0 else f"Failed:\n{output}"
 ```
 
 ---
 
-## Installation & Setup
+## 📄 License
 
-Forge targets 8GB VRAM environments by aggressively utilizing quantized KV caching in `llama.cpp`.
-
-1. **Spin up the Inference Server**
-   ```bash
-   # Use q8_0 KV caching to maximize context window on 8GB GPUs
-   llama-server -m qwen2.5-coder-7b-instruct-q4_k_m.gguf \
-       --n-gpu-layers 35 --ctx-size 8192 \
-       --cache-type-k q8_0 --cache-type-v q8_0 \
-       --port 8080
-   ```
-
-2. **Install Forge**
-   ```bash
-   pip install -e .
-   ```
-
-3. **Configure & Run**
-   Forge creates a `~/.forge/config.toml` on first run. Configure your frontier keys and default models there.
-   ```bash
-   forge --url http://localhost:8080/v1 --workspace local
-   ```
-
----
-
-## CLI Command Reference
-
-The `prompt-toolkit` interface supports interactive slash commands to control the agent lifecycle:
-
-| Command | Action | Deep Dive |
-|---------|--------|-----------|
-| `/memory <query>` | **Archival Search** | Queries the SQLite long-term store, bypassing the context window. |
-| `/history` | **Event Log Dump** | Renders the last 10 Pydantic events in a Rich table. |
-| `/sessions` | **Session Manager** | Lists persistent JSONL states available for recovery. |
-| `/resume <id>` | **Time Travel** | Replaces the current state tree with a historical JSONL snapshot. |
-| `/frontier` | **Escalation** | Bypasses local Llama.cpp for the next turn, hitting OpenAI/Anthropic. |
-| `/clear` | **Memory Flush** | Wipes the LLM Condenser's working summary for a fresh start. |
-
----
+MIT License — free for personal, commercial, and open-source use.

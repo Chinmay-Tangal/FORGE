@@ -29,10 +29,14 @@ def execute_tool(
     feed result back as a user Message.
     """
     func_name = tc["function"]["name"]
-    try:
-        args = json.loads(tc["function"]["arguments"])
-    except json.JSONDecodeError:
-        args = {}
+    raw_args = tc["function"].get("arguments", {})
+    if isinstance(raw_args, dict):
+        args = raw_args
+    else:
+        try:
+            args = json.loads(raw_args)
+        except (json.JSONDecodeError, TypeError):
+            args = {}
 
     action = ToolCallAction(tool_name=func_name, tool_args=args)
     agent.state.append_event(action)
@@ -59,7 +63,10 @@ def execute_tool(
     agent.state.append_event(obs)
     yield obs
 
-    # Feed result back as a user message so the next LLM call sees it
+    # Feed both assistant action and tool result back so the LLM sees the complete chain
+    agent.state.append_event(
+        Message(role="assistant", content=f"```json\n{{\"name\": \"{func_name}\", \"arguments\": {json.dumps(args)}}}\n```")
+    )
     agent.state.append_event(
         Message(role="user", content=f"Tool `{func_name}` returned:\n{obs.content}")
     )

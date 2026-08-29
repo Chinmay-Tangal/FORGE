@@ -29,18 +29,32 @@ class LocalWorkspace(Workspace):
         self.base_dir = os.path.abspath(base_dir)
 
     def _resolve(self, path: str) -> str:
-        """Resolve a relative path against base_dir."""
+        """Resolve a relative or absolute path against base_dir, handling POSIX/Windows paths."""
+        if not path:
+            return self.base_dir
+        path = str(path).strip().strip("'\"")
+        if not path or path == ".":
+            return self.base_dir
+
+        import re
+        # Handle Git Bash / MSYS style drive paths like /d/... or /c/...
+        m = re.match(r"^/([a-zA-Z])/(.*)", path)
+        if m and os.name == "nt":
+            drive, rest = m.groups()
+            path = f"{drive.upper()}:/{rest}"
+
         if os.path.isabs(path):
-            return path
+            return os.path.abspath(path)
         return os.path.abspath(os.path.join(self.base_dir, path))
 
     def read_file(self, path: str) -> str:
-        with open(self._resolve(path), "r", encoding="utf-8") as fh:
+        resolved = self._resolve(path)
+        with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
             return fh.read()
 
     def write_file(self, path: str, content: str) -> None:
         resolved = self._resolve(path)
-        os.makedirs(os.path.dirname(resolved), exist_ok=True)
+        os.makedirs(os.path.dirname(resolved) or ".", exist_ok=True)
         with open(resolved, "w", encoding="utf-8") as fh:
             fh.write(content)
 
