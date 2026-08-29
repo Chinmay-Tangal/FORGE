@@ -219,22 +219,26 @@ class Agent:
             "CORE BEHAVIOR RULES:\n"
             "1. BE AUTONOMOUS AND PROACTIVE: Never ask the user for information you can find yourself. "
             "Never ask the user for file paths, directory contents, or permission to read files. "
-            "Use your tools (list_dir, find_files, grep, read_file, shell, git_status) to explore the workspace and inspect code directly.\n"
+            "Use your tools (list_dir, find_files, grep, read_file, write_file, patch_file, shell, git_status) to explore and build directly.\n"
             "2. NO CONVERSATIONAL FILLER: Do NOT say 'I will read the file', 'Please provide the path', or 'To list files I will call list_dir'. "
             "Execute the tool calls IMMEDIATELY.\n"
-            "3. MULTI-STEP EXECUTION: Perform complete multi-step workflows autonomously. "
-            "For example: inspect directory -> read relevant files -> make edits with write_file or patch_file -> run tests with shell -> give final summary.\n"
+            "3. PLANNING WORKFLOW: When asked to create modules or run tests:\n"
+            "   Step 1: Write the implementation files using `write_file`.\n"
+            "   Step 2: Write the test files using `write_file`.\n"
+            "   Step 3: Run the tests or verification using `shell`.\n"
+            "   Never run test runners (like pytest) before creating the source and test files!\n"
             "4. FILE PATHS: All relative paths are resolved relative to the current working directory. "
-            "To inspect the current directory, call list_dir(path='.'). To read a file, use its relative path (e.g. 'README.md', 'forge/cli/main.py') or absolute path.\n"
-            "5. EDITING CODE: Prefer patch_file for targeted edits and write_file for creating new files or full overwrites. "
-            "Always inspect existing files with read_file before patching them.\n"
-            "6. SHELL COMMANDS: Use the `shell` tool to run commands (builds, tests, linters, installs)."
+            "To inspect the current directory, call list_dir(path='.'). To read a file, use its relative path (e.g. 'README.md', 'calc.py') or absolute path.\n"
+            "5. NO REPETITIVE ACTIONS: Never call the exact same command repeatedly if it returns the same result. "
+            "If a command returns empty or fails due to missing files, create the files first."
         )
 
         # Set by the CLI to the text of the last user message for skill triggering
         self._last_user_message: str = ""
         # Pending tool call waiting for user confirmation
         self._pending: Optional[Dict[str, Any]] = None
+        # Track recent tool calls for loop prevention
+        self._call_history: List[Tuple[str, str]] = []
 
     # Context assembly — delegates to builder module
     def _build_messages(self) -> List[Dict[str, str]]:
@@ -294,6 +298,26 @@ class Agent:
                     args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
                 except (json.JSONDecodeError, TypeError):
                     args = {}
+
+                # Loop prevention: check if identical call was repeated
+                sig = (func_name, json.dumps(args, sort_keys=True))
+                if len(self._call_history) >= 2 and self._call_history[-1] == sig and self._call_history[-2] == sig:
+                    nudge = Message(
+                        role="user",
+                        content=(
+                            f"[System: `{func_name}` with arguments `{json.dumps(args)}` was called repeatedly without making progress. "
+                            "If tests or commands failed because files are missing, first create the implementation and test files with `write_file`, "
+                            "then run the verification command.]"
+                        ),
+                    )
+                    self.state.append_event(nudge)
+                    yield nudge
+                    self._call_history.clear()
+                    return
+
+                self._call_history.append(sig)
+                if len(self._call_history) > 10:
+                    self._call_history.pop(0)
 
                 if self.security.requires_confirmation(func_name, args):
                     risk = self.security.assess_risk(func_name, args)
