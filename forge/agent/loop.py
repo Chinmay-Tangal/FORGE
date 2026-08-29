@@ -43,6 +43,49 @@ logger = logging.getLogger(__name__)
 
 _TOOL_CALLS_SENTINEL = "\x00TOOL_CALLS\x00"
 
+import re as _re
+
+def _parse_text_tool_calls(text: str) -> list:
+    """
+    Fallback parser: extract tool calls from plain text content when the LLM
+    (e.g. Ollama) embeds them as JSON instead of returning structured tool_calls.
+
+    Handles two common formats:
+    - {"name": "write_file", "arguments": {...}}
+    - {"name": "write_file", "parameters": {...}}
+    """
+    results = []
+    # Find all top-level JSON objects in the text
+    for match in _re.finditer(r'\{', text):
+        start = match.start()
+        depth = 0
+        for i, ch in enumerate(text[start:]):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:start + i + 1]
+                    try:
+                        obj = json.loads(candidate)
+                        name = obj.get("name")
+                        args = obj.get("arguments") or obj.get("parameters") or {}
+                        if name and isinstance(name, str):
+                            if isinstance(args, dict):
+                                args_str = json.dumps(args)
+                            else:
+                                args_str = str(args)
+                            results.append({
+                                "id": f"text_{start}",
+                                "type": "function",
+                                "function": {"name": name, "arguments": args_str},
+                            })
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    break
+    return results
+
+
 
 class Agent:
     """
@@ -84,11 +127,12 @@ class Agent:
         self.condenser = LLMSummarizingCondenser(llm=llm.local_llm)
 
         self.system_prompt = (
-            "You are Forge, a helpful and highly capable terminal-native local agentic "
-            "coding assistant. You have access to tools to read/write files, run shell "
-            "commands, search code, and manage memory.\n"
-            "Always prefer targeted edits (patch_file) over full rewrites (write_file) "
-            "for existing files. Think step-by-step before taking irreversible actions."
+            "You are Forge, a terminal-native agentic coding assistant. "
+            "You MUST use tools to perform ALL file and shell operations. "
+            "NEVER print code as plain text — always call write_file or patch_file to create/modify files. "
+            "NEVER describe what commands to run — always call run_shell to execute them. "
+            "When asked to create a project or file, immediately call write_file with the full content. "
+            "Think step-by-step, use tools for every action, and confirm results with read_file or run_shell."
         )
 
         # Set by the CLI to the text of the last user message for skill triggering
@@ -140,12 +184,19 @@ class Agent:
             return
 
         tool_calls = message.get("tool_calls") or []
+
+        # Fallback: some Ollama models return tool calls as JSON text content
+        # instead of structured tool_calls. Parse them out if tool_calls is empty.
+        if not tool_calls:
+            content = message.get("content", "") or ""
+            tool_calls = _parse_text_tool_calls(content)
+
         if tool_calls:
             for tc in tool_calls:
                 func_name = tc["function"]["name"]
                 try:
-                    args = json.loads(tc["function"]["arguments"])
-                except json.JSONDecodeError:
+                    args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
+                except (json.JSONDecodeError, TypeError):
                     args = {}
 
                 if self.security.requires_confirmation(func_name, args):
