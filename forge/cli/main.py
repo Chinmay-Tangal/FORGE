@@ -132,10 +132,16 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
 
     # Startup output
     print_banner()
+    from forge.workspace.grounding import get_git_info
+    git_info = get_git_info(os.getcwd())
+    repo_branch = f"  ({git_info['branch']})" if git_info.get("is_repo") and git_info.get("branch") else ""
+    proj_name = git_info.get("repo_name") or os.path.basename(os.getcwd())
+
     console.print(Panel(
         f"[bold]Session :[/bold] {session_id}\n"
         f"[bold]LLM     :[/bold] {cfg.local_llm_url}  ([dim]{cfg.local_model}[/dim])\n"
-        f"[bold]Workspace:[/bold] {args.workspace}\n"
+        f"[bold]Project :[/bold] {proj_name}{repo_branch}\n"
+        f"[bold]Workspace:[/bold] {args.workspace}  ([dim]{os.getcwd()}[/dim])\n"
         f"[bold]Policy  :[/bold] {cfg.security_policy}\n"
         f"[bold]Tools   :[/bold] {len(registry)} registered",
         title="[bold blue]Forge[/bold blue]",

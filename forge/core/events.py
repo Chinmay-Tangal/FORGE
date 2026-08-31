@@ -8,8 +8,8 @@ Never mutate existing events — always append new ones.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,7 @@ class Event(BaseModel):
     """Base class for every event in the event-sourced system."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source: str = "agent"  # 'agent' | 'user' | 'system'
 
     model_config = {"frozen": False}  # state is append-only, not field-frozen
@@ -39,10 +39,13 @@ class Observation(Event):
 
 
 class Message(Event):
-    """A chat message from user, assistant, or system."""
+    """A chat message from user, assistant, system, or tool."""
 
-    role: str  # 'user' | 'assistant' | 'system'
-    content: str
+    role: str  # 'user' | 'assistant' | 'system' | 'tool'
+    content: str = ""
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+    name: Optional[str] = None
 
 
 class ToolCallAction(Action):

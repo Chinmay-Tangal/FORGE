@@ -19,7 +19,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Type
 
 from forge.core.events import (
@@ -55,7 +55,7 @@ _EVENT_REGISTRY: Dict[str, Type[Event]] = {
 # Helpers
 def generate_session_id() -> str:
     """Generate a human-readable session ID: YYYYMMDD-HHMMSS-<8hex>."""
-    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     return f"{ts}-{uuid.uuid4().hex[:8]}"
 
 
@@ -113,7 +113,7 @@ class SessionManager:
                     "cost": state.cost,
                     "confirmation_policy": state.confirmation_policy,
                     "working_context": state.working_context,
-                    "saved_at": datetime.utcnow().isoformat(),
+                    "saved_at": datetime.now(timezone.utc).isoformat(),
                 }
                 fh.write(json.dumps(meta) + "\n")
                 for event in state.events:

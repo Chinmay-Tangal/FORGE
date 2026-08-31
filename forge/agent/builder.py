@@ -8,7 +8,7 @@ agentic execution cycle.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
 
 if TYPE_CHECKING:
     from forge.agent.loop import Agent
@@ -16,14 +16,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def build_messages(agent: "Agent") -> List[Dict[str, str]]:
+def build_messages(agent: "Agent") -> List[Dict[str, Any]]:
     """
     Assemble the messages list for the next LLM call.
 
     Order: base system prompt → skill/project context → condensed history
-    summary → last 20 in-context events.
+    summary → last 25 in-context events.
     """
-    messages: List[Dict[str, str]] = [
+    messages: List[Dict[str, Any]] = [
         {"role": "system", "content": agent.system_prompt}
     ]
     skill_ctx = agent.skill_loader.build_system_context(agent._last_user_message)
@@ -34,8 +34,15 @@ def build_messages(agent: "Agent") -> List[Dict[str, str]]:
             "role": "system",
             "content": f"Condensed history:\n{agent.state.working_context}",
         })
-    for msg in agent.state.get_recent_messages(limit=20):
-        messages.append({"role": msg.role, "content": msg.content})
+    for msg in agent.state.get_recent_messages(limit=25):
+        m: Dict[str, Any] = {"role": msg.role, "content": msg.content or ""}
+        if msg.role == "assistant" and msg.tool_calls:
+            m["tool_calls"] = msg.tool_calls
+        elif msg.role == "tool":
+            m["tool_call_id"] = msg.tool_call_id or "call_0"
+            if msg.name:
+                m["name"] = msg.name
+        messages.append(m)
     return messages
 
 

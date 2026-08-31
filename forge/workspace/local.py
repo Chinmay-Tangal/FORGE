@@ -60,6 +60,22 @@ class LocalWorkspace(Workspace):
 
     def run_command(self, command: str, cwd: str | None = None) -> Tuple[int, str]:
         run_dir = self._resolve(cwd) if cwd else self.base_dir
+        cmd_stripped = command.strip()
+
+        # Handle simple 'cd <path>' or 'cd' command to persistently change workspace working directory
+        if cmd_stripped == "cd" or cmd_stripped.startswith("cd "):
+            target = cmd_stripped[3:].strip().strip("'\"") if len(cmd_stripped) > 3 else ""
+            new_dir = self._resolve(target) if target else os.path.expanduser("~")
+            if os.path.isdir(new_dir):
+                self.base_dir = os.path.abspath(new_dir)
+                try:
+                    os.chdir(self.base_dir)
+                except Exception:
+                    pass
+                return 0, f"Working directory changed to: {self.base_dir}"
+            else:
+                return 1, f"cd: directory not found: {target}"
+
         try:
             result = subprocess.run(
                 command,

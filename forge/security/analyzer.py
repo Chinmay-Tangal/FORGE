@@ -22,7 +22,7 @@ _LOW_RISK_TOOLS = frozenset({"read_file", "list_dir", "find_files", "grep",
                               "memory_search", "git_status", "git_diff", "git_log"})
 
 # Tools that mutate state but are recoverable.
-_MEDIUM_RISK_TOOLS = frozenset({"write_file", "append_file", "patch_file",
+_MEDIUM_RISK_TOOLS = frozenset({"write_file", "edit_file", "append_file", "patch_file",
                                  "memory_insert", "memory_evict", "git_commit"})
 
 # Shell sub-strings that escalate a shell command to HIGH risk.

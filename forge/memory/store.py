@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class MemoryStore:
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.execute(
                 "INSERT INTO archival_memory (content, timestamp) VALUES (?, ?)",
-                (content, datetime.utcnow().isoformat()),
+                (content, datetime.now(timezone.utc).isoformat()),
             )
             return cur.lastrowid  # type: ignore[return-value]
 
@@ -95,7 +95,7 @@ class MemoryStore:
             conn.execute(
                 "INSERT OR REPLACE INTO recall_memory (id, event_type, timestamp, payload) "
                 "VALUES (?, ?, ?, ?)",
-                (event_id, event_type, datetime.utcnow().isoformat(), json.dumps(payload)),
+                (event_id, event_type, datetime.now(timezone.utc).isoformat(), json.dumps(payload)),
             )
 
     def get_recall_history(self, limit: int = 50) -> List[Dict[str, Any]]:

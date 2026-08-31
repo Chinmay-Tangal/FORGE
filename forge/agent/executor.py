@@ -65,10 +65,19 @@ def execute_tool(
 
     # Feed both assistant action and tool result back so the LLM sees the complete chain
     agent.state.append_event(
-        Message(role="assistant", content=f"```json\n{{\"name\": \"{func_name}\", \"arguments\": {json.dumps(args)}}}\n```")
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[tc],
+        )
     )
     agent.state.append_event(
-        Message(role="user", content=f"Tool `{func_name}` returned:\n{obs.content}")
+        Message(
+            role="tool",
+            tool_call_id=tc.get("id") or f"call_{func_name}",
+            name=func_name,
+            content=obs.content,
+        )
     )
 
 

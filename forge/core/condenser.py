@@ -12,7 +12,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, List
 
-from forge.core.events import Event
+from forge.core.events import (
+    Event,
+    FileReadObservation,
+    Message,
+    ShellCommandObservation,
+    ToolCallAction,
+    ToolResultObservation,
+)
 
 if TYPE_CHECKING:
     from forge.llm.backend import LLMBackend
@@ -20,11 +27,44 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
-    "You are a concise summarisation assistant. "
-    "Summarise the provided conversation events into a short, dense paragraph "
-    "that preserves all decisions made, files edited, commands run, and key facts. "
-    "Output only the summary — no preamble."
+    "You are a concise context-summarization assistant for an agentic coding environment. "
+    "Summarize the provided events into a dense, factual bulleted summary preserving:\n"
+    "- User goals and decisions\n"
+    "- Files created, read, or modified\n"
+    "- Shell commands run and outcomes\n"
+    "- Current status and next steps\n"
+    "Keep the summary under 150 words. Output ONLY the summary."
 )
+
+
+def format_event_for_summary(event: Event) -> str:
+    """Produce a compact, human-readable one-line description of an event."""
+    if isinstance(event, Message):
+        content = (event.content or "").strip()
+        if len(content) > 200:
+            content = content[:200] + "…"
+        if event.tool_calls:
+            tc_names = [tc.get("function", {}).get("name", "tool") for tc in event.tool_calls]
+            return f"[Assistant] Invoked tools: {', '.join(tc_names)}"
+        return f"[{event.role.capitalize()}] {content}"
+    elif isinstance(event, ToolCallAction):
+        args_str = str(event.tool_args)
+        if len(args_str) > 100:
+            args_str = args_str[:100] + "…"
+        return f"[Tool Call] {event.tool_name}({args_str})"
+    elif isinstance(event, ToolResultObservation):
+        content = (event.content or "").strip()
+        status = "Success" if event.success else "Failed"
+        if len(content) > 150:
+            content = content[:150] + "…"
+        return f"[Tool Result: {event.tool_name} - {status}] {content}"
+    elif isinstance(event, ShellCommandObservation):
+        return f"[Shell Exit {event.exit_code}] {event.command}"
+    elif isinstance(event, FileReadObservation):
+        return f"[File Read] {event.path}"
+    else:
+        text = str(getattr(event, "content", "")) or type(event).__name__
+        return f"[{type(event).__name__}] {text[:100]}"
 
 
 class LLMSummarizingCondenser:
@@ -44,13 +84,18 @@ class LLMSummarizingCondenser:
         previous_summary:
             The existing working_context to fold into the new summary.
         """
-        events_text = "\n".join(
-            f"[{type(e).__name__}] {e.model_dump_json()}" for e in events
-        )
+        formatted_lines = [format_event_for_summary(e) for e in events]
+        events_text = "\n".join(formatted_lines)
+
+        # Cap text sent to condenser to prevent 400 Bad Request on local models with small context
+        if len(events_text) > 3000:
+            events_text = events_text[:3000] + "\n… [older events truncated]"
+
         user_content = ""
         if previous_summary:
-            user_content += f"Previous context summary:\n{previous_summary}\n\n"
-        user_content += f"Events to summarise:\n{events_text}"
+            prev = previous_summary if len(previous_summary) < 1000 else previous_summary[:1000] + "…"
+            user_content += f"Previous context summary:\n{prev}\n\n"
+        user_content += f"Recent events to summarise:\n{events_text}"
 
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
@@ -58,8 +103,15 @@ class LLMSummarizingCondenser:
         ]
         try:
             response = self.llm.generate(messages)
-            return response["choices"][0]["message"]["content"]
+            summary = response["choices"][0]["message"]["content"].strip()
+            if summary:
+                return summary
         except Exception as exc:
             logger.warning("Condenser LLM call failed: %s", exc)
-            # Fallback: return a simple truncated concatenation
-            return (previous_summary + "\n" + events_text)[:2000]
+
+        # Clean structured fallback without raw JSON dumps
+        fallback_lines = []
+        if previous_summary:
+            fallback_lines.append(previous_summary[:500])
+        fallback_lines.extend(formatted_lines[-8:])
+        return "\n".join(fallback_lines)[:1000]

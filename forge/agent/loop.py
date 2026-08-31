@@ -23,12 +23,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os as _os
+import re as _re
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
+from forge.agent import builder as _builder
+from forge.agent import executor as _executor
 from forge.config import Config
 from forge.core.condenser import LLMSummarizingCondenser
 from forge.core.events import (
-    ConfirmationRequiredEvent, Event, Message, ToolCallAction, ToolResultObservation,
+    ConfirmationRequiredEvent,
+    Event,
+    Message,
 )
 from forge.core.state import ConversationState
 from forge.llm.router import RouterLLM
@@ -36,18 +42,14 @@ from forge.security.analyzer import SecurityAnalyzer
 from forge.security.hooks import HookRunner
 from forge.skills.loader import SkillLoader
 from forge.tools.registry import ToolRegistry
-from forge.agent import builder as _builder
-from forge.agent import executor as _executor
+from forge.workspace.grounding import get_workspace_grounding
 
 logger = logging.getLogger(__name__)
 
 _TOOL_CALLS_SENTINEL = "\x00TOOL_CALLS\x00"
 
-import os as _os
-import re as _re
-
 _KNOWN_TOOLS = {
-    "read_file", "write_file", "append_file", "delete_file",
+    "read_file", "write_file", "edit_file", "append_file", "delete_file",
     "list_dir", "find_files", "grep", "patch_file",
     "shell", "git_status", "git_diff", "git_log", "git_commit",
     "memory_search", "memory_insert", "memory_evict",
@@ -171,7 +173,6 @@ def _parse_text_tool_calls(text: str) -> list:
     return results
 
 
-
 class Agent:
     """
     Forge's agent loop.
@@ -212,25 +213,29 @@ class Agent:
         self.condenser = LLMSummarizingCondenser(llm=llm.local_llm)
 
         cwd = _os.path.abspath(_os.getcwd())
+        grounding = get_workspace_grounding(cwd)
+
         self.system_prompt = (
-            "You are Forge, an autonomous terminal-native AI coding assistant and expert software engineer, modeled after Claude Code.\n"
-            f"Current working directory: {cwd}\n"
-            f"Operating system: {'Windows' if _os.name == 'nt' else 'POSIX'}\n\n"
-            "CORE BEHAVIOR RULES:\n"
-            "1. BE AUTONOMOUS AND PROACTIVE: Never ask the user for information you can find yourself. "
-            "Never ask the user for file paths, directory contents, or permission to read files. "
-            "Use your tools (list_dir, find_files, grep, read_file, write_file, patch_file, shell, git_status) to explore and build directly.\n"
-            "2. NO CONVERSATIONAL FILLER: Do NOT say 'I will read the file', 'Please provide the path', or 'To list files I will call list_dir'. "
-            "Execute the tool calls IMMEDIATELY.\n"
-            "3. PLANNING WORKFLOW: When asked to create modules or run tests:\n"
-            "   Step 1: Write the implementation files using `write_file`.\n"
-            "   Step 2: Write the test files using `write_file`.\n"
-            "   Step 3: Run the tests or verification using `shell`.\n"
-            "   Never run test runners (like pytest) before creating the source and test files!\n"
-            "4. FILE PATHS: All relative paths are resolved relative to the current working directory. "
-            "To inspect the current directory, call list_dir(path='.'). To read a file, use its relative path (e.g. 'README.md', 'calc.py') or absolute path.\n"
-            "5. NO REPETITIVE ACTIONS: Never call the exact same command repeatedly if it returns the same result. "
-            "If a command returns empty or fails due to missing files, create the files first."
+            "You are Forge, an elite autonomous terminal-native AI coding assistant and expert software engineer, modeled after Claude Code and Cursor.\n\n"
+            f"{grounding}\n\n"
+            "OPERATING ENVIRONMENT & CAPABILITIES:\n"
+            f"- Current Working Directory: {cwd}\n"
+            f"- Operating System: {'Windows' if _os.name == 'nt' else 'POSIX'}\n"
+            "- You have direct read, write, and execute access in this workspace through your tools.\n\n"
+            "CRITICAL AUTONOMY DIRECTIVES:\n"
+            "1. DIRECT ACTION OVER CHAT: Never describe code changes or output raw file contents in chat when asked to create, edit, or apply changes to files. "
+            "You MUST call `write_file`, `edit_file`, or `patch_file` to write the changes directly to disk.\n"
+            "2. NEVER CLAIM LACK OF ACCESS: You have complete access to the project workspace via tools. "
+            "Never say 'I don't have access to files', 'I am not associated with any repository', or 'Please provide the file contents'. "
+            "Use `read_file`, `list_dir`, `find_files`, `grep`, and `git_status` to inspect files directly.\n"
+            "3. REPO & PROJECT AWARENESS: You are running directly inside the user's project. "
+            "When asked about the project or repository, reference the workspace files, README, and git branch.\n"
+            "4. WORKFLOW FOR BUILDING & FIXING:\n"
+            "   - Step 1: Inspect existing files using `read_file` or `list_dir` to understand structure and style.\n"
+            "   - Step 2: Make modifications or create files using `write_file` or `edit_file`.\n"
+            "   - Step 3: Verify your work using `shell` or test runners.\n"
+            "5. EDITING FILES: Prefer `edit_file` for targeted string replacements in existing files. Use `write_file` when creating new files or doing complete rewrites.\n"
+            "6. NO REPETITIVE FAILING COMMANDS: If a command fails because a file is missing, create the file before re-running."
         )
 
         # Set by the CLI to the text of the last user message for skill triggering
@@ -239,9 +244,11 @@ class Agent:
         self._pending: Optional[Dict[str, Any]] = None
         # Track recent tool calls for loop prevention
         self._call_history: List[Tuple[str, str]] = []
+        # Track consecutive guidance nudges to prevent infinite loops
+        self._nudge_count: int = 0
 
     # Context assembly — delegates to builder module
-    def _build_messages(self) -> List[Dict[str, str]]:
+    def _build_messages(self) -> List[Dict[str, Any]]:
         return _builder.build_messages(self)
 
     def _maybe_condense(self) -> None:
@@ -292,6 +299,7 @@ class Agent:
             tool_calls = _parse_text_tool_calls(content)
 
         if tool_calls:
+            self._nudge_count = 0
             for tc in tool_calls:
                 func_name = tc["function"]["name"]
                 try:
@@ -337,7 +345,60 @@ class Agent:
                 if self.state.status != "active":
                     return
         else:
-            msg = Message(role="assistant", content=message.get("content", ""))
+            content = (message.get("content") or "").strip()
+            lower_content = content.lower()
+
+            # Guardrail 1: Check if the model falsely claimed lack of access
+            lack_of_access_patterns = (
+                "don't have access to", "do not have access to",
+                "cannot access files", "can't access files",
+                "don't have access to a website", "don't have access to the current files",
+                "please provide the current content", "if you provide the current content",
+                "please provide the content", "not currently associated with any specific repository"
+            )
+            if self._nudge_count < 2 and any(pat in lower_content for pat in lack_of_access_patterns):
+                self._nudge_count += 1
+                nudge = Message(
+                    role="user",
+                    content=(
+                        "[System Guidance: You have full access to tools to inspect and modify the repository directly. "
+                        "Use `list_dir`, `find_files`, `read_file`, or `git_status` to access the files. "
+                        "Do not ask the user for file contents or state that you lack access.]"
+                    ),
+                )
+                self.state.append_event(nudge)
+                yield nudge
+                return
+
+            # Guardrail 2: Check if user requested a file change, but model returned text/code without invoking a tool
+            user_wants_file_action = any(
+                kw in self._last_user_message.lower()
+                for kw in ("make", "create", "write", "update", "edit", "apply", "change", "add", "fix", "html", "landing page", "index.html", "readme")
+            )
+            has_code_or_claim = (
+                ("```" in content)
+                or ("i'll update" in lower_content)
+                or ("i'll apply" in lower_content)
+                or ("i've applied" in lower_content)
+                or ("here's the updated" in lower_content)
+                or ("here is the updated" in lower_content)
+            )
+            if self._nudge_count < 2 and user_wants_file_action and has_code_or_claim:
+                self._nudge_count += 1
+                nudge = Message(
+                    role="user",
+                    content=(
+                        "[System Guidance: You provided code in text, but you did not execute `write_file` or `edit_file`. "
+                        "The file on disk has NOT been updated. "
+                        "Please invoke `write_file(path=..., content=...)` or `edit_file` now to write the changes directly to disk.]"
+                    ),
+                )
+                self.state.append_event(nudge)
+                yield nudge
+                return
+
+            self._nudge_count = 0
+            msg = Message(role="assistant", content=content)
             self.state.append_event(msg)
             yield msg
 

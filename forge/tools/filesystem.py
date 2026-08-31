@@ -24,22 +24,33 @@ _ws = LocalWorkspace(os.getcwd())
 # read_file
 @registry.register(
     name="read_file",
-    description="Read the full contents of a file and return them as a string.",
+    description="Read the contents of a file. Supports optional start_line and end_line parameters.",
     parameters={
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "File path relative to the workspace root."},
+            "start_line": {"type": "integer", "description": "Optional 1-indexed line number to start reading from."},
+            "end_line": {"type": "integer", "description": "Optional 1-indexed line number to stop reading at."},
         },
         "required": ["path"],
     },
 )
-def read_file(path: str) -> str:
+def read_file(path: str, start_line: int | None = None, end_line: int | None = None) -> str:
     try:
-        return _ws.read_file(path)
+        content = _ws.read_file(path)
     except FileNotFoundError:
         return f"Error: file not found: {path}"
     except Exception as exc:
         return f"Error reading {path}: {exc}"
+
+    lines = content.splitlines()
+    if start_line is not None or end_line is not None:
+        start = max(0, (start_line - 1) if start_line is not None else 0)
+        end = min(len(lines), end_line if end_line is not None else len(lines))
+        selected_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines[start:end], start=start)]
+        return "\n".join(selected_lines) if selected_lines else "(Empty range)"
+
+    return content
 
 
 # write_file
@@ -48,7 +59,7 @@ def read_file(path: str) -> str:
     description=(
         "Write (or overwrite) a file with the given content. "
         "Parent directories are created automatically. "
-        "Prefer patch_file for small targeted edits."
+        "Use this whenever you need to create a new file or completely update an existing file."
     ),
     parameters={
         "type": "object",
@@ -62,9 +73,65 @@ def read_file(path: str) -> str:
 def write_file(path: str, content: str) -> str:
     try:
         _ws.write_file(path, content)
-        return f"Wrote {len(content)} bytes to '{path}'."
+        line_count = len(content.splitlines())
+        return f"Wrote {len(content)} bytes ({line_count} lines) to '{path}'."
     except Exception as exc:
         return f"Error writing '{path}': {exc}"
+
+
+# edit_file
+@registry.register(
+    name="edit_file",
+    description=(
+        "Replace an exact target block of text ('old_string') with 'new_string' in a file. "
+        "Prefer this tool over patch_file for precise, reliable edits in existing files."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Path to the file to edit."},
+            "old_string": {"type": "string", "description": "The exact existing text to replace."},
+            "new_string": {"type": "string", "description": "The new replacement text."},
+            "replace_all": {
+                "type": "boolean",
+                "description": "If true, replace all occurrences. Default false (replaces first unique occurrence).",
+            },
+        },
+        "required": ["path", "old_string", "new_string"],
+    },
+)
+def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+    abs_path = _ws._resolve(path)
+    if not os.path.isfile(abs_path):
+        return f"Error: file not found: '{path}'"
+    try:
+        content = _ws.read_file(path)
+    except Exception as exc:
+        return f"Error reading '{path}': {exc}"
+
+    if old_string not in content:
+        return (
+            f"Error: `old_string` was not found in '{path}'. "
+            "Please read the file using `read_file` to ensure exact whitespace and indentation match."
+        )
+
+    count = content.count(old_string)
+    if count > 1 and not replace_all:
+        return (
+            f"Error: `old_string` occurs {count} times in '{path}'. "
+            "Please provide more surrounding context lines to make it unique, or set replace_all=True."
+        )
+
+    if replace_all:
+        new_content = content.replace(old_string, new_string)
+    else:
+        new_content = content.replace(old_string, new_string, 1)
+
+    try:
+        _ws.write_file(path, new_content)
+        return f"Successfully edited '{path}' (replaced {count if replace_all else 1} occurrence(s))."
+    except Exception as exc:
+        return f"Error writing updated content to '{path}': {exc}"
 
 
 # append_file
