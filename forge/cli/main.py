@@ -146,7 +146,7 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
         f"[bold]Policy  :[/bold] [yellow]{cfg.security_policy}[/yellow]\n"
         f"[bold]Tools   :[/bold] [bold cyan]{len(registry)}[/bold cyan] registered",
         title=f" {FORGE_LOGO} ",
-        border_style="bright_blue",
+        border_style="#ff9e3b",
     ))
 
     if not local_llm.check_health():
@@ -170,7 +170,7 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
     )
     require_frontier = False
 
-    prompt_html = HTML(f"<b><ansicyan>[{session_id[:8]}]</ansicyan> <ansired>f</ansired><ansiyellow>o</ansiyellow><ansigreen>r</ansigreen><ansicyan>g</ansicyan><ansimagenta>e</ansimagenta> <ansibrightyellow>&gt;</ansibrightyellow></b> ")
+    prompt_html = HTML(f"<b><ansidarkgray>[{session_id[:8]}]</ansidarkgray> <ansiyellow>forge</ansiyellow> <ansibrightyellow>&gt;</ansibrightyellow></b> ")
 
     # REPL loop
     while True:
