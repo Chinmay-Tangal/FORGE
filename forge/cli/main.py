@@ -132,20 +132,21 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
 
     # Startup output
     print_banner()
+    from forge.cli.display import FORGE_LOGO
     from forge.workspace.grounding import get_git_info
     git_info = get_git_info(os.getcwd())
     repo_branch = f"  ({git_info['branch']})" if git_info.get("is_repo") and git_info.get("branch") else ""
     proj_name = git_info.get("repo_name") or os.path.basename(os.getcwd())
 
     console.print(Panel(
-        f"[bold]Session :[/bold] {session_id}\n"
+        f"[bold]Session :[/bold] [cyan]{session_id}[/cyan]\n"
         f"[bold]LLM     :[/bold] {cfg.local_llm_url}  ([dim]{cfg.local_model}[/dim])\n"
-        f"[bold]Project :[/bold] {proj_name}{repo_branch}\n"
+        f"[bold]Project :[/bold] [bold green]{proj_name}[/bold green]{repo_branch}\n"
         f"[bold]Workspace:[/bold] {args.workspace}  ([dim]{os.getcwd()}[/dim])\n"
-        f"[bold]Policy  :[/bold] {cfg.security_policy}\n"
-        f"[bold]Tools   :[/bold] {len(registry)} registered",
-        title="[bold blue]Forge[/bold blue]",
-        border_style="blue",
+        f"[bold]Policy  :[/bold] [yellow]{cfg.security_policy}[/yellow]\n"
+        f"[bold]Tools   :[/bold] [bold cyan]{len(registry)}[/bold cyan] registered",
+        title=f" {FORGE_LOGO} ",
+        border_style="bright_blue",
     ))
 
     if not local_llm.check_health():
@@ -160,6 +161,7 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
     )
 
     # Prompt-toolkit session (with history)
+    from prompt_toolkit.formatted_text import HTML
     os.makedirs(cfg.sessions_dir, exist_ok=True)
     history_file = os.path.join(cfg.sessions_dir, ".prompt_history")
     prompt_session: PromptSession = PromptSession(
@@ -168,11 +170,13 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
     )
     require_frontier = False
 
+    prompt_html = HTML(f"<b><ansicyan>[{session_id[:8]}]</ansicyan> <ansired>f</ansired><ansiyellow>o</ansiyellow><ansigreen>r</ansigreen><ansicyan>g</ansicyan><ansimagenta>e</ansimagenta> <ansibrightyellow>&gt;</ansibrightyellow></b> ")
+
     # REPL loop
     while True:
         try:
             with patch_stdout():
-                user_input = prompt_session.prompt(f"[{session_id[:8]}] > ")
+                user_input = prompt_session.prompt(prompt_html)
         except KeyboardInterrupt:
             console.print("\n[dim]Interrupted.[/dim]")
             continue

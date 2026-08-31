@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Optional
 from rich import box
 from rich.table import Table
 
-from forge.cli.display import console
+from forge.cli.display import FORGE_TITLE, console
 
 if TYPE_CHECKING:
     from forge.agent import Agent
@@ -91,7 +91,7 @@ def handle(
 
 # Individual handlers
 def _help() -> None:
-    table = Table(title="Forge Slash Commands", box=box.SIMPLE, show_header=True)
+    table = Table(title=f"{FORGE_TITLE} Slash Commands", box=box.SIMPLE, show_header=True)
     table.add_column("Command", style="bold cyan", no_wrap=True)
     table.add_column("Description")
     for cmd, desc in HELP_TEXT.items():

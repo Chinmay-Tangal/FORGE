@@ -21,14 +21,17 @@ console = Console()
 
 _FENCE_RE = re.compile(r"```(\w+)?\n(.*?)```", re.DOTALL)
 
-FORGE_BANNER = r"""[bold blue]
-  ███████╗ ██████╗ ██████╗  ██████╗ ███████╗
-  ██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
-  █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
-  ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
-  ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
-  ╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
-[/bold blue][dim]  Terminal-native local agentic coding assistant[/dim]
+FORGE_TITLE = "[bold #ff3366]F[/bold #ff3366][bold #ff6600]o[/bold #ff6600][bold #ffcc00]r[/bold #ffcc00][bold #00e676]g[/bold #00e676][bold #00e5ff]e[/bold #00e5ff]"
+FORGE_LOGO = "[bold #ff3366]F[/bold #ff3366][bold #ff6600]O[/bold #ff6600][bold #ffcc00]R[/bold #ffcc00][bold #00e676]G[/bold #00e676][bold #00e5ff]E[/bold #00e5ff]"
+
+FORGE_BANNER = r"""
+  [bold #ff3366]███████╗[/bold #ff3366] [bold #ff6600]██████╗[/bold #ff6600] [bold #ffcc00]██████╗[/bold #ffcc00]  [bold #00e676]██████╗[/bold #00e676] [bold #00e5ff]███████╗[/bold #00e5ff]
+  [bold #ff3366]██╔════╝[/bold #ff3366][bold #ff6600]██╔═══██╗[/bold #ff6600][bold #ffcc00]██╔══██╗[/bold #ffcc00][bold #00e676]██╔════╝[/bold #00e676] [bold #00e5ff]██╔════╝[/bold #00e5ff]
+  [bold #ff3366]█████╗  [/bold #ff3366][bold #ff6600]██║   ██║[/bold #ff6600][bold #ffcc00]██████╔╝[/bold #ffcc00][bold #00e676]██║  ███╗[/bold #00e676][bold #00e5ff]█████╗  [/bold #00e5ff]
+  [bold #ff3366]██╔══╝  [/bold #ff3366][bold #ff6600]██║   ██║[/bold #ff6600][bold #ffcc00]██╔══██╗[/bold #ffcc00][bold #00e676]██║   ██║[/bold #00e676][bold #00e5ff]██╔══╝  [/bold #00e5ff]
+  [bold #ff3366]██║     [/bold #ff3366][bold #ff6600]╚██████╔╝[/bold #ff6600][bold #ffcc00]██║  ██║[/bold #ffcc00][bold #00e676]╚██████╔╝[/bold #00e676][bold #00e5ff]███████╗[/bold #00e5ff]
+  [bold #ff3366]╚═╝     [/bold #ff3366][bold #ff6600] ╚═════╝ [/bold #ff6600][bold #ffcc00]╚═╝  ╚═╝[/bold #ffcc00][bold #00e676] ╚═════╝ [/bold #00e676][bold #00e5ff]╚══════╝[/bold #00e5ff]
+  [bold #ffaa00]⚡[/bold #ffaa00] [dim]Terminal-native local agentic coding assistant[/dim]
 """
 
 
@@ -60,9 +63,8 @@ def render_assistant(content: str) -> None:
         else:
             inner_parts.append(text)
 
-    # Build a renderable panel. Rich doesn't accept a mixed list directly,
-    # so we print each part, then wrap the whole thing in a panel header.
-    console.print(Panel("", title="[bold green]Forge[/bold green]", border_style="green", padding=(0, 0)))
+    # Build a renderable panel with colorful Forge title
+    console.print(Panel("", title=f" {FORGE_TITLE} ", border_style="cyan", padding=(0, 0)))
     for part in inner_parts:
         if isinstance(part, str):
             console.print(f"  [green]{part}[/green]")
