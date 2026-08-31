@@ -97,8 +97,12 @@ def render_confirmation_prompt(tool_name: str, tool_args: dict, risk: str) -> No
 
 def render_event(event: "Event") -> None:
     """Dispatch rendering for any event type."""
-    from forge.agent import ConfirmationRequiredEvent
-    from forge.core.events import Message, ToolCallAction, ToolResultObservation
+    from forge.core.events import (
+        ConfirmationRequiredEvent,
+        Message,
+        ToolCallAction,
+        ToolResultObservation,
+    )
 
     if isinstance(event, Message):
         if event.role == "assistant":

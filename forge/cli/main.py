@@ -28,12 +28,12 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.panel import Panel
 
-from forge.agent import Agent, ConfirmationRequiredEvent
+from forge.agent import Agent
 from forge.cli import commands as cmd_module
 from forge.cli.commands import TOGGLE_FRONTIER
 from forge.cli.display import console, print_banner, render_confirmation_prompt, render_event
 from forge.config import Config
-from forge.core.events import Message
+from forge.core.events import ConfirmationRequiredEvent, Message
 from forge.core.state import ConversationState
 from forge.llm.backend import LLMBackend
 from forge.llm.router import RouterLLM
