@@ -242,6 +242,13 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
                 except (KeyboardInterrupt, EOFError):
                     for evt in agent.resume_denied():
                         render_event(evt)
+
+            # Let the assistant observe the tool result and conclude its response
+            if state.status == "active":
+                with console.status("[bold green]Thinking…[/bold green]", spinner="dots"):
+                    for evt in agent.run(require_frontier=require_frontier):
+                        if isinstance(evt, Message):
+                            render_event(evt)
         else:
             for event in events:
                 if isinstance(event, Message):

@@ -327,18 +327,18 @@ class Agent:
 
                 # Loop prevention: check if identical call was repeated
                 sig = (func_name, json.dumps(args, sort_keys=True))
-                if len(self._call_history) >= 2 and self._call_history[-1] == sig and self._call_history[-2] == sig:
+                repeat_count = sum(1 for s in self._call_history[-4:] if s == sig)
+                if repeat_count >= 2:
+                    action_hint = "create or edit the source files with `write_file`" if func_name == "shell" else "inspect files with `read_file`"
                     nudge = Message(
                         role="user",
                         content=(
-                            f"[System: `{func_name}` with arguments `{json.dumps(args)}` was called repeatedly without making progress. "
-                            "If tests or commands failed because files are missing, first create the implementation and test files with `write_file`, "
-                            "then run the verification command.]"
+                            f"[System Directive: `{func_name}` with arguments `{json.dumps(args)}` was executed repeatedly. "
+                            f"Stop repeating this action. Please {action_hint} before re-attempting.]"
                         ),
                     )
                     self.state.append_event(nudge)
                     yield nudge
-                    self._call_history.clear()
                     return
 
                 self._call_history.append(sig)

@@ -82,6 +82,10 @@ def read_file(path: str, start_line: int | None = None, end_line: int | None = N
     },
 )
 def write_file(path: str, content: str) -> str:
+    # If the LLM sent content with literal escaped newlines (e.g. "def foo():\\n    pass")
+    # and no actual unescaped newlines exist, convert them to real newlines.
+    if "\n" not in content and "\\n" in content:
+        content = content.replace("\\n", "\n").replace("\\t", "    ").replace('\\"', '"')
     try:
         _ws.write_file(path, content)
         line_count = len(content.splitlines())
@@ -355,7 +359,14 @@ def find_files(pattern: str, directory: str = ".") -> str:
 )
 def grep(pattern: str, directory: str = ".", file_glob: str = "**/*") -> str:
     try:
-        base = _ws._resolve(directory or ".")
+        # Fallback to workspace root if directory is a placeholder (e.g. {{result}}) or does not exist
+        clean_dir = (directory or ".").strip()
+        if not clean_dir or "{{" in clean_dir or "$" in clean_dir:
+            base = _ws.base_dir
+        else:
+            resolved_dir = _ws._resolve(clean_dir)
+            base = resolved_dir if os.path.exists(resolved_dir) else _ws.base_dir
+
         glob_candidates = [file_glob]
         if file_glob != "**/*" and not file_glob.startswith("**"):
             glob_candidates.append(os.path.join("**", file_glob))
