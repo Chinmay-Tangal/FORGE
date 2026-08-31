@@ -40,36 +40,13 @@ def print_banner() -> None:
 
 
 def render_assistant(content: str) -> None:
-    """Render assistant text, syntax-highlighting fenced code blocks."""
-    last = 0
-    segments: list[tuple[str, str | None]] = []  # (text, lang_or_None)
-    for m in _FENCE_RE.finditer(content):
-        before = content[last : m.start()].strip()
-        if before:
-            segments.append((before, None))
-        segments.append((m.group(2), m.group(1) or "text"))
-        last = m.end()
-    after = content[last:].strip()
-    if after:
-        segments.append((after, None))
-
-    if not segments:
-        segments = [(content, None)]
-
-    inner_parts: list[str | Syntax] = []
-    for text, lang in segments:
-        if lang is not None:
-            inner_parts.append(Syntax(text, lang, theme="monokai", line_numbers=False))
-        else:
-            inner_parts.append(text)
-
-    # Build a renderable panel with clean Forge header
-    console.print(Panel("", title=f" {FORGE_TITLE} ", border_style="#ff9e3b", padding=(0, 0)))
-    for part in inner_parts:
-        if isinstance(part, str):
-            console.print(f"  [green]{part}[/green]")
-        else:
-            console.print(part)
+    """Render assistant text cleanly inside a styled Rich Panel."""
+    content = content.strip()
+    if not content:
+        return
+    from rich.markdown import Markdown
+    md = Markdown(content, code_theme="monokai")
+    console.print(Panel(md, title=f" {FORGE_TITLE} ", border_style="#ff9e3b", padding=(0, 2)))
 
 
 def render_tool_call(tool_name: str, tool_args: dict) -> None:

@@ -168,7 +168,25 @@ def _parse_text_tool_calls(text: str) -> list:
                     "type": "function",
                     "function": {"name": fn_name, "arguments": json.dumps(args_dict)},
                 })
-                break
+
+    if results:
+        return results
+
+    # 5. Extract files from markdown code blocks with filepath headings
+    # e.g. ### forge/utils/bench.py\n```python\n<code>```
+    file_block_re = _re.compile(
+        r"(?:###|\*\*|File:|\#)\s*`?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)`?\s*(?:\*\*)?\s*\n+```[a-zA-Z0-9_-]*\n(.*?)```",
+        _re.DOTALL,
+    )
+    for m in file_block_re.finditer(text):
+        fpath = m.group(1).strip().replace("\\", "/").strip("`")
+        fcontent = m.group(2)
+        if "/" in fpath or fpath.endswith((".py", ".html", ".css", ".js", ".json", ".md", ".toml", ".sh", ".txt", ".yml", ".yaml")):
+            results.append({
+                "id": f"tc_{len(results)}",
+                "type": "function",
+                "function": {"name": "write_file", "arguments": json.dumps({"path": fpath, "content": fcontent})},
+            })
 
     return results
 

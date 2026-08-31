@@ -10,6 +10,7 @@ from __future__ import annotations
 import glob
 import logging
 import os
+import re
 import subprocess
 import tempfile
 
@@ -49,6 +50,16 @@ def read_file(path: str, start_line: int | None = None, end_line: int | None = N
         end = min(len(lines), end_line if end_line is not None else len(lines))
         selected_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines[start:end], start=start)]
         return "\n".join(selected_lines) if selected_lines else "(Empty range)"
+
+    # Truncate very large files (>300 lines) to prevent blowing local LLM context windows
+    max_preview_lines = 300
+    if len(lines) > max_preview_lines:
+        preview = [f"{i+1:4d} | {line}" for i, line in enumerate(lines[:max_preview_lines])]
+        preview.append(
+            f"\n[File truncated: showing first {max_preview_lines} of {len(lines)} lines. "
+            "Use read_file with start_line and end_line to inspect specific sections.]"
+        )
+        return "\n".join(preview)
 
     return content
 
@@ -96,11 +107,23 @@ def write_file(path: str, content: str) -> str:
                 "type": "boolean",
                 "description": "If true, replace all occurrences. Default false (replaces first unique occurrence).",
             },
+            "line_number": {
+                "type": "integer",
+                "description": "Optional 1-indexed line number to insert content at if old_string is omitted.",
+            },
         },
-        "required": ["path", "old_string", "new_string"],
+        "required": ["path"],
     },
 )
-def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+def edit_file(
+    path: str,
+    old_string: str = "",
+    new_string: str = "",
+    replace_all: bool = False,
+    line_number: int | None = None,
+    insertions: list[dict] | None = None,
+    **kwargs,
+) -> str:
     abs_path = _ws._resolve(path)
     if not os.path.isfile(abs_path):
         return f"Error: file not found: '{path}'"
@@ -108,6 +131,38 @@ def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = F
         content = _ws.read_file(path)
     except Exception as exc:
         return f"Error reading '{path}': {exc}"
+
+    # Handle line insertions if old_string is empty
+    if not old_string:
+        if insertions:
+            lines = content.splitlines(keepends=True)
+            for item in sorted(insertions, key=lambda x: x.get("line_number", 0), reverse=True):
+                ln = max(0, item.get("line_number", 1) - 1)
+                text = item.get("content", "")
+                if not text.endswith("\n"):
+                    text += "\n"
+                lines.insert(ln, text)
+            new_content = "".join(lines)
+            try:
+                _ws.write_file(path, new_content)
+                return f"Successfully inserted {len(insertions)} block(s) into '{path}'."
+            except Exception as exc:
+                return f"Error writing updated content to '{path}': {exc}"
+        elif line_number is not None:
+            lines = content.splitlines(keepends=True)
+            ln = max(0, line_number - 1)
+            text = new_string if new_string.endswith("\n") else new_string + "\n"
+            lines.insert(ln, text)
+            new_content = "".join(lines)
+            try:
+                _ws.write_file(path, new_content)
+                return f"Successfully inserted content at line {line_number} in '{path}'."
+            except Exception as exc:
+                return f"Error writing updated content to '{path}': {exc}"
+        return (
+            "Error: `old_string` cannot be empty. "
+            "Please provide the exact text from the file you want to replace."
+        )
 
     if old_string not in content:
         return (
@@ -141,8 +196,8 @@ def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = F
     parameters={
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "File path to append to."},
-            "content": {"type": "string", "description": "Text to append."},
+            "path": {"type": "string", "description": "Destination file path."},
+            "content": {"type": "string", "description": "Content to append."},
         },
         "required": ["path", "content"],
     },
@@ -181,6 +236,13 @@ def delete_file(path: str) -> str:
         return f"Error deleting '{path}': {exc}"
 
 
+def _safe_relpath(path: str, base: str) -> str:
+    try:
+        return os.path.relpath(path, base)
+    except (ValueError, Exception):
+        return path
+
+
 # list_dir
 @registry.register(
     name="list_dir",
@@ -208,7 +270,7 @@ def list_dir(path: str = ".") -> str:
     if not entries:
         return f"'{path}' is empty."
 
-    display_path = os.path.relpath(abs_path, _ws.base_dir) if abs_path != _ws.base_dir else "."
+    display_path = _safe_relpath(abs_path, _ws.base_dir) if abs_path != _ws.base_dir else "."
     lines = [f"Contents of {display_path}:"]
     for entry in entries[:200]:
         if entry.is_dir():
@@ -232,12 +294,12 @@ def list_dir(path: str = ".") -> str:
     name="find_files",
     description=(
         "Find files matching a glob pattern within the workspace. "
-        "Supports recursive globs, e.g. '**/*.py'."
+        "Supports recursive globs, e.g. '**/*.py' or 'bench.py'."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Glob pattern, e.g. '**/*.py'."},
+            "pattern": {"type": "string", "description": "Glob pattern, e.g. '**/*.py' or 'loop.py'."},
             "directory": {
                 "type": "string",
                 "description": "Sub-directory to search in. Defaults to workspace root ('.').",
@@ -249,14 +311,22 @@ def list_dir(path: str = ".") -> str:
 def find_files(pattern: str, directory: str = ".") -> str:
     try:
         base = _ws._resolve(directory or ".")
-        matches = glob.glob(os.path.join(base, pattern), recursive=True)
+        candidates = [pattern]
+        if not pattern.startswith("**") and "/" not in pattern and "\\" not in pattern:
+            candidates.append(os.path.join("**", pattern))
+
+        matches_set: set[str] = set()
+        for pat in candidates:
+            for f in glob.glob(os.path.join(base, pat), recursive=True):
+                matches_set.add(f)
+        matches = sorted(matches_set)
     except Exception as exc:
         return f"Error finding files: {exc}"
 
     if not matches:
         return f"No files found matching '{pattern}' in '{directory}'."
 
-    rel = sorted(os.path.relpath(m, _ws.base_dir) for m in matches)[:100]
+    rel = sorted(_safe_relpath(m, _ws.base_dir) for m in matches)[:100]
     result = f"Found {len(matches)} match(es):\n" + "\n".join(rel)
     if len(matches) > 100:
         result += f"\n  … showing first 100 of {len(matches)}."
@@ -267,17 +337,17 @@ def find_files(pattern: str, directory: str = ".") -> str:
 @registry.register(
     name="grep",
     description=(
-        "Search for a text pattern across files in the workspace. "
+        "Search for a regex or text pattern across files in the workspace. "
         "Returns matching lines with file name and line number."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Text to search for (case-insensitive)."},
+            "pattern": {"type": "string", "description": "Regex or text pattern to search for (case-insensitive)."},
             "directory": {"type": "string", "description": "Directory to search. Defaults to workspace root ('.')."},
             "file_glob": {
                 "type": "string",
-                "description": "Glob to filter files, e.g. '**/*.py'. Defaults to all files.",
+                "description": "Glob to filter files, e.g. '*.py' or '**/*.py'. Defaults to all files.",
             },
         },
         "required": ["pattern"],
@@ -286,18 +356,36 @@ def find_files(pattern: str, directory: str = ".") -> str:
 def grep(pattern: str, directory: str = ".", file_glob: str = "**/*") -> str:
     try:
         base = _ws._resolve(directory or ".")
-        files = [f for f in glob.glob(os.path.join(base, file_glob), recursive=True) if os.path.isfile(f)]
+        glob_candidates = [file_glob]
+        if file_glob != "**/*" and not file_glob.startswith("**"):
+            glob_candidates.append(os.path.join("**", file_glob))
+
+        files_set: set[str] = set()
+        for gp in glob_candidates:
+            for f in glob.glob(os.path.join(base, gp), recursive=True):
+                if os.path.isfile(f):
+                    files_set.add(f)
+        files = sorted(files_set)
     except Exception as exc:
         return f"Error during grep setup: {exc}"
 
     matches: list[str] = []
+    try:
+        rx = re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        rx = None
     needle = pattern.lower()
+
     for filepath in files:
+        norm = filepath.replace("\\", "/")
+        if any(ign in norm for ign in ("/.git/", "/__pycache__/", "/.venv/", "/node_modules/", "/.forge/")):
+            continue
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as fh:
                 for lineno, line in enumerate(fh, 1):
-                    if needle in line.lower():
-                        rel = os.path.relpath(filepath, _ws.base_dir)
+                    matched = (rx.search(line) is not None) if rx else (needle in line.lower())
+                    if matched:
+                        rel = _safe_relpath(filepath, _ws.base_dir)
                         matches.append(f"{rel}:{lineno}: {line.rstrip()}")
                         if len(matches) >= 50:
                             break

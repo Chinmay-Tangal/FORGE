@@ -33,7 +33,8 @@ TOGGLE_FRONTIER = "__toggle_frontier__"
 HELP_TEXT = {
     "/help":     "Show this help message.",
     "/history":  "Show the last 10 session events.",
-    "/memory":   "/memory <query>  — Search archival memory.",
+    "/memory":   "/memory [query]  — Search or list archival memories. Use '/memory add <note>' to save.",
+    "/remember": "/remember <text>  — Save a persistent note into archival memory.",
     "/sessions": "List all saved sessions.",
     "/resume":   "/resume <id>     — Switch to a saved session.",
     "/policy":   "/policy strict|auto  — Change security policy.",
@@ -70,6 +71,8 @@ def handle(
         _history(state)
     elif cmd == "/memory":
         _memory(arg)
+    elif cmd in ("/remember", "/memory_insert"):
+        _remember(arg)
     elif cmd == "/sessions":
         _sessions(session_manager)
     elif cmd == "/resume":
@@ -121,17 +124,42 @@ def _history(state: "ConversationState") -> None:
     console.print(table)
 
 
-def _memory(query: str) -> None:
-    if not query:
-        console.print("[yellow]Usage: /memory <query>[/yellow]")
+def _remember(content: str) -> None:
+    content = content.strip()
+    if not content:
+        console.print("[yellow]Usage: /remember <note to remember>[/yellow]")
         return
     from forge.memory.store import MemoryStore
-    results = MemoryStore().search_archival(query)
+    store = MemoryStore()
+    mem_id = store.insert_archival(content)
+    console.print(f"[green]✓ Saved memory [#{mem_id}]:[/green] {content}")
+
+
+def _memory(query: str) -> None:
+    from forge.memory.store import MemoryStore
+    store = MemoryStore()
+    q = query.strip()
+
+    if q.lower().startswith("add ") or q.lower().startswith("insert "):
+        content = q.split(maxsplit=1)[1].strip()
+        return _remember(content)
+
+    if not q:
+        results = store.search_archival("")
+        if not results:
+            console.print("[dim]No saved memories yet. Use '/memory add <text>' to save a note.[/dim]")
+        else:
+            console.print("[bold cyan]Recent Memories:[/bold cyan]")
+            for r in results[:10]:
+                console.print(f"  [cyan][#{r['id']}][/cyan] [dim]{r['timestamp'][:19]}[/dim] {r['content']}")
+        return
+
+    results = store.search_archival(q)
     if not results:
-        console.print("[dim]No matching memories.[/dim]")
+        console.print(f"[dim]No matching memories for '{q}'.[/dim]")
     else:
         for r in results:
-            console.print(f"  [cyan][#{r['id']}][/cyan] {r['timestamp'][:19]}  {r['content']}")
+            console.print(f"  [cyan][#{r['id']}][/cyan] [dim]{r['timestamp'][:19]}[/dim] {r['content']}")
 
 
 def _sessions(session_manager: "SessionManager") -> None:

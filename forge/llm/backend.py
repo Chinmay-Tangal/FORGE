@@ -70,6 +70,7 @@ class LLMBackend:
             "model": self.model,
             "messages": messages,
             "temperature": 0.1,
+            "options": {"num_ctx": 8192},
         }
         if tools:
             payload["tools"] = tools
@@ -96,8 +97,9 @@ class LLMBackend:
         payload: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "temperature": 0.1,
             "stream": True,
+            "temperature": 0.1,
+            "options": {"num_ctx": 8192},
         }
         if tools:
             payload["tools"] = tools
