@@ -18,12 +18,17 @@ from typing import Any, Dict
 logger = logging.getLogger(__name__)
 
 # Tools that are definitively read-only and safe.
-_LOW_RISK_TOOLS = frozenset({"read_file", "list_dir", "find_files", "grep",
-                              "memory_search", "git_status", "git_diff", "git_log"})
+_LOW_RISK_TOOLS = frozenset({
+    "read_file", "list_dir", "find_files", "grep",
+    "memory_search", "git_status", "git_diff", "git_log",
+    "get_code_outline", "find_symbol", "find_references",
+})
 
 # Tools that mutate state but are recoverable.
-_MEDIUM_RISK_TOOLS = frozenset({"write_file", "edit_file", "append_file", "patch_file",
-                                 "memory_insert", "memory_evict", "git_commit"})
+_MEDIUM_RISK_TOOLS = frozenset({
+    "write_file", "edit_file", "append_file", "patch_file",
+    "memory_insert", "memory_evict", "git_commit", "delegate_task",
+})
 
 # Shell sub-strings that escalate a shell command to HIGH risk.
 _HIGH_RISK_SHELL_PATTERNS = ("rm ", "rmdir", "del ", "format", "mkfs",

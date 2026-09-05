@@ -53,6 +53,8 @@ _KNOWN_TOOLS = {
     "list_dir", "find_files", "grep", "patch_file",
     "shell", "git_status", "git_diff", "git_log", "git_commit",
     "memory_search", "memory_insert", "memory_evict",
+    "get_code_outline", "find_symbol", "find_references",
+    "delegate_task",
 }
 
 
@@ -229,6 +231,15 @@ class Agent:
         self.hook_runner = HookRunner(hooks_dir=cfg.hooks_dir)
         self.skill_loader = SkillLoader(skills_dir=cfg.skills_dir)
         self.condenser = LLMSummarizingCondenser(llm=llm.local_llm)
+
+        from forge.agent.subagent import SubAgentRunner, set_subagent_runner
+        self.subagent_runner = SubAgentRunner(
+            llm=self.llm,
+            tool_registry=self.registry,
+            security=self.security,
+            max_iterations=min(10, self.max_iterations),
+        )
+        set_subagent_runner(self.subagent_runner)
 
         cwd = _os.path.abspath(_os.getcwd())
         grounding = get_workspace_grounding(cwd)

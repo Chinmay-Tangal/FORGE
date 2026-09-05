@@ -64,6 +64,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                    help="Frontier API key. Also read from FORGE_FRONTIER_KEY env var.")
     p.add_argument("--config", metavar="FILE", default=".forge/config.toml",
                    help="Path to config TOML file.")
+    p.add_argument("--mcp-config", metavar="FILE", default=None,
+                   help="Path to MCP JSON config file (default: .forge/mcp.json).")
     p.add_argument("--dump-config", action="store_true",
                    help="Print effective config and exit.")
     p.add_argument("--verbose", action="store_true",
@@ -114,6 +116,12 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
     router = RouterLLM(local_llm=local_llm, frontier_llm=frontier_llm)
     security = SecurityAnalyzer(policy=cfg.security_policy)
 
+    # MCP Client & Tools Manager
+    from forge.mcp.manager import MCPManager
+    mcp_config_path = args.mcp_config or cfg.mcp_config
+    mcp_manager = MCPManager(config_path=mcp_config_path)
+    mcp_tools_count = mcp_manager.load_and_connect(registry=registry)
+
     # Session
     session_manager = SessionManager(sessions_dir=cfg.sessions_dir)
     if args.session:
@@ -134,9 +142,15 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
     print_banner()
     from forge.cli.display import FORGE_LOGO
     from forge.workspace.grounding import get_git_info
+    from forge.codebase.ast_index import CodebaseIndex
     git_info = get_git_info(os.getcwd())
     repo_branch = f"  ({git_info['branch']})" if git_info.get("is_repo") and git_info.get("branch") else ""
     proj_name = git_info.get("repo_name") or os.path.basename(os.getcwd())
+
+    cb_index = CodebaseIndex(os.getcwd())
+    sym_count = cb_index.index_workspace(max_files=100)
+
+    mcp_info = f"\n[bold]MCP     :[/bold] [green]{len(mcp_manager.clients)} server(s)[/green] ({mcp_tools_count} tools)" if mcp_manager.clients else ""
 
     console.print(Panel(
         f"[bold]Session :[/bold] [cyan]{session_id}[/cyan]\n"
@@ -144,7 +158,8 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
         f"[bold]Project :[/bold] [bold green]{proj_name}[/bold green]{repo_branch}\n"
         f"[bold]Workspace:[/bold] {args.workspace}  ([dim]{os.getcwd()}[/dim])\n"
         f"[bold]Policy  :[/bold] [yellow]{cfg.security_policy}[/yellow]\n"
-        f"[bold]Tools   :[/bold] [bold cyan]{len(registry)}[/bold cyan] registered",
+        f"[bold]AST Index:[/bold] [bold cyan]{sym_count}[/bold cyan] symbols indexed\n"
+        f"[bold]Tools   :[/bold] [bold cyan]{len(registry)}[/bold cyan] registered{mcp_info}",
         title=f" {FORGE_LOGO} ",
         border_style="#ff9e3b",
     ))
@@ -262,6 +277,7 @@ def main() -> None:  # noqa: C901 (complexity is intentional — this is a REPL)
         session_manager.save(state, session_id)
 
     # Graceful exit
+    mcp_manager.shutdown()
     session_manager.save(state, session_id)
     console.print(f"\n[dim]Session saved: {session_id}[/dim]")
     console.print("[bold blue]Goodbye.[/bold blue]")

@@ -18,7 +18,11 @@ Forge connects directly to your workspace. It reads files, plans changes, perfor
 ## Features
 
 - **Autonomous Tool Execution**: Discovers workspace layout, reads source files, applies targeted edits, and runs test commands directly.
-- **Repository Grounding**: Automatically detects Git branch, commit status, top-level directories, and project overview on startup.
+- **Model Context Protocol (MCP) Host**: Connects directly to external stdio MCP servers (GitHub, Postgres, Slack, Sentry, etc.) defined in `.forge/mcp.json`.
+- **AST Semantic Code Intelligence**: Native Python AST and polyglot symbol indexing (`find_symbol`, `get_code_outline`, `find_references`).
+- **Subagent Task Delegation**: Spawns isolated, specialized subagents (`researcher`, `tester`, `reviewer`) for complex multi-step objectives.
+- **Hybrid Vector Memory**: Combines dense vector embeddings with BM25 lexical ranking for fast, cross-session archival recall.
+- **Repository Grounding**: Automatically detects Git branch, commit status, top-level directories, project overview, and key indexed symbols on startup.
 - **Local-First Architecture**: Compatible with any OpenAI-compliant local server (`/v1/chat/completions`), optimized for models like `Qwen2.5-Coder` and `DeepSeek-Coder`.
 - **Hybrid Frontier Routing (`/frontier`)**: Run daily tasks on local hardware for zero cost. Toggle `/frontier` to route complex architectural turns to hosted models (Claude 3.5 Sonnet, GPT-4o).
 - **Context Condensation**: Automatically summarizes older turns to prevent context overflow on consumer GPUs with 8k–32k context windows.
@@ -82,6 +86,7 @@ local_model     = "qwen2.5-coder"
 security_policy = "auto"     # "auto" (prompt on high-risk) or "strict" (prompt on medium/high)
 context_limit   = 6000       # Token threshold before context compression
 max_iterations  = 30         # Maximum autonomous tool iterations per turn
+mcp_config      = ".forge/mcp.json"
 
 # Optional frontier model (used when /frontier is toggled)
 frontier_llm_url = "https://api.openai.com/v1"
@@ -93,27 +98,32 @@ frontier_api_key = "sk-..."  # Or set FORGE_FRONTIER_KEY env var
 
 ## Built-in Tools
 
-Forge equips the agent with 17 built-in tools across 4 categories:
+Forge equips the agent with 21 built-in tools across 6 categories:
 
 | Category | Tools | Description |
 |---|---|---|
+| **Code Intelligence** | `get_code_outline`, `find_symbol`, `find_references` | AST outline extraction, global symbol lookup, and cross-file reference discovery. |
+| **Subagents** | `delegate_task` | Spawn specialized subagents (`researcher`, `tester`, `reviewer`, `general`). |
 | **Filesystem** | `read_file`, `write_file`, `edit_file`, `append_file`, `delete_file`, `list_dir`, `find_files`, `grep`, `patch_file` | Read files (with line ranges), create files, make exact string replacements, list directories, glob, and search text. |
 | **Shell** | `shell` | Run shell commands and test suites. Tracks directory changes (`cd`) across turns. |
 | **Git** | `git_status`, `git_diff`, `git_log`, `git_commit` | Inspect repository state, view diffs, read log history, and create atomic commits. |
-| **Memory** | `memory_search`, `memory_insert`, `memory_evict` | Search and persist long-term notes across sessions via SQLite. |
+| **Memory** | `memory_search`, `memory_insert`, `memory_evict` | Dense vector + BM25 hybrid semantic search and archival storage via SQLite. |
 
 ---
 
 ## CLI Slash Commands
 
-Control session lifecycle and model behavior directly inside the REPL:
+Control session lifecycle, tools, and model behavior directly inside the REPL:
 
 - `/help` — Display command list and descriptions.
 - `/status` — View current session ID, event count, and context size.
 - `/history` — Show recent tool actions and outputs in a table.
+- `/symbols [query]` — Search AST symbols or inspect structured file outline.
+- `/mcp` — View connected Model Context Protocol servers and tools.
+- `/agents` — Show available subagent delegation roles.
 - `/frontier` — Toggle frontier model routing for the next prompt.
 - `/policy [auto|strict]` — Change confirmation security policy.
-- `/memory <query>` — Search archival memory database.
+- `/memory <query>` — Search archival memory database via hybrid vector search.
 - `/sessions` — List saved session logs.
 - `/resume <id>` — Load and resume a previous conversation.
 - `/skills` — Reload custom skills and rules from disk.

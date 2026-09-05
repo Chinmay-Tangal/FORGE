@@ -114,6 +114,7 @@ class Config:
     skills_dir: str = ".forge/skills"
     memory_db: str = ".forge/memory.db"
     sessions_dir: str = ".forge/sessions"
+    mcp_config: str = ".forge/mcp.json"
 
     @classmethod
     def load(cls, path: str = ".forge/config.toml") -> "Config":

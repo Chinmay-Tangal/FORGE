@@ -154,4 +154,22 @@ def get_workspace_grounding(base_dir: str = ".") -> str:
     if entries_summary:
         lines.append(f"- Top-level Structure:\n{entries_summary}")
 
+    # Project symbols summary (AST indexed)
+    try:
+        from forge.codebase.ast_index import CodebaseIndex
+        cb_index = CodebaseIndex(abs_base)
+        cb_index.index_workspace(max_files=100)
+        if cb_index.symbols:
+            top_classes = [s.name for s in cb_index.symbols if s.kind == "class"][:8]
+            top_funcs = [s.name for s in cb_index.symbols if s.kind in ("function", "async_function") and not s.parent][:10]
+            sym_parts = []
+            if top_classes:
+                sym_parts.append(f"Classes: {', '.join(top_classes)}")
+            if top_funcs:
+                sym_parts.append(f"Functions: {', '.join(top_funcs)}")
+            if sym_parts:
+                lines.append(f"- Key Symbols ({len(cb_index.symbols)} indexed): {'; '.join(sym_parts)}")
+    except Exception:
+        pass
+
     return "\n".join(lines)

@@ -35,6 +35,9 @@ HELP_TEXT = {
     "/history":  "Show the last 10 session events.",
     "/memory":   "/memory [query]  — Search or list archival memories. Use '/memory add <note>' to save.",
     "/remember": "/remember <text>  — Save a persistent note into archival memory.",
+    "/symbols":  "/symbols [query|file] — Search AST symbols or inspect structured file outline.",
+    "/mcp":      "Show connected MCP (Model Context Protocol) servers and tools.",
+    "/agents":   "Show available subagent roles for task delegation.",
     "/sessions": "List all saved sessions.",
     "/resume":   "/resume <id>     — Switch to a saved session.",
     "/policy":   "/policy strict|auto  — Change security policy.",
@@ -81,6 +84,12 @@ def handle(
         _policy(arg, security=security)
     elif cmd == "/skills":
         _skills(agent)
+    elif cmd == "/mcp":
+        _mcp()
+    elif cmd == "/symbols":
+        _symbols(arg)
+    elif cmd == "/agents":
+        _agents()
     elif cmd == "/frontier":
         return TOGGLE_FRONTIER
     elif cmd == "/clear":
@@ -224,3 +233,68 @@ def _status(state: "ConversationState", session_id: str) -> None:
         f"  Cost    : ${state.cost:.4f}\n"
         f"  Context : {len(state.working_context)} chars"
     )
+
+
+def _mcp() -> None:
+    import os
+    from forge.mcp.manager import MCPManager
+    manager = MCPManager()
+    if not os.path.isfile(manager.config_path):
+        console.print(f"[dim]No MCP configuration found at {manager.config_path}.[/dim]\n"
+                      "[dim]Create '.forge/mcp.json' with your server definitions to enable MCP tools.[/dim]")
+        return
+    statuses = manager.get_status()
+    if not statuses:
+        console.print("[dim]No MCP servers connected. Check '.forge/mcp.json'.[/dim]")
+        return
+    table = Table(title="Model Context Protocol (MCP) Servers", box=box.SIMPLE)
+    table.add_column("Server", style="bold cyan")
+    table.add_column("Status")
+    table.add_column("Command")
+    table.add_column("Tools", justify="right")
+    for s in statuses:
+        stat_label = "[green]Connected[/green]" if s["connected"] else "[red]Disconnected[/red]"
+        table.add_row(s["name"], stat_label, s["command"], str(len(s["tools"])))
+    console.print(table)
+
+
+def _symbols(arg: str) -> None:
+    import os
+    from forge.codebase.ast_index import CodebaseIndex
+    index = CodebaseIndex(os.getcwd())
+    arg = arg.strip()
+    if not arg:
+        count = index.index_workspace()
+        console.print(f"[green]✓ AST symbol index ready — {count} symbols across project.[/green]")
+        console.print("[dim]Use '/symbols <query>' to search or '/symbols <file.py>' for an outline.[/dim]")
+        return
+
+    if os.path.isfile(arg):
+        outline = index.get_file_outline(arg)
+        console.print(outline)
+    else:
+        matches = index.find_symbol(arg, limit=15)
+        if not matches:
+            console.print(f"[dim]No symbols found matching '{arg}'.[/dim]")
+        else:
+            table = Table(title=f"AST Symbols matching '{arg}'", box=box.SIMPLE)
+            table.add_column("Kind", style="bold yellow")
+            table.add_column("Symbol", style="bold cyan")
+            table.add_column("Location")
+            for s in matches:
+                loc = f"{s.filepath}:{s.start_line}"
+                parent = f" ({s.parent})" if s.parent else ""
+                table.add_row(s.kind, f"{s.name}{parent}", loc)
+            console.print(table)
+
+
+def _agents() -> None:
+    table = Table(title="Specialized Subagent Delegation Roles", box=box.SIMPLE)
+    table.add_column("Role", style="bold cyan")
+    table.add_column("Focus Area")
+    table.add_row("researcher", "Deep multi-file codebase discovery, AST symbol inspection, and analysis.")
+    table.add_row("tester", "Test execution, traceback inspection, regression isolation, and root-cause diagnosis.")
+    table.add_row("reviewer", "Code review, diff verification, security auditing, and edge-case validation.")
+    table.add_row("general", "Autonomous multi-step execution of bounded sub-tasks.")
+    console.print(table)
+

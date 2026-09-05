@@ -14,5 +14,7 @@ import forge.tools.filesystem   # noqa: F401, E402
 import forge.tools.git          # noqa: F401, E402
 import forge.tools.shell        # noqa: F401, E402
 import forge.memory.tools       # noqa: F401, E402  — memory tools live beside the store they wrap
+import forge.codebase.tools     # noqa: F401, E402  — AST symbol intelligence tools
+import forge.agent.subagent     # noqa: F401, E402  — multi-agent delegation tools
 
 __all__ = ["registry", "ToolRegistry"]
