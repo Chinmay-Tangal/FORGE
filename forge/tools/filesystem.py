@@ -64,28 +64,98 @@ def read_file(path: str, start_line: int | None = None, end_line: int | None = N
     return content
 
 
+def _fuzzy_replace(content: str, old_string: str, new_string: str, path: str = "", replace_all: bool = False) -> tuple[bool, str, int]:
+    """
+    Fuzzy match and replace text handling indentation, trailing whitespace, and line breaks.
+    Returns (success, updated_content_or_error, match_count).
+    """
+    if old_string in content:
+        count = content.count(old_string)
+        if count > 1 and not replace_all:
+            return False, f"Error: `old_string` occurs {count} times in '{path}'. Please provide more surrounding context lines to make it unique, or set replace_all=True.", count
+        new_c = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
+        return True, new_c, count
+
+    # 1. Try stripping leading/trailing whitespace
+    stripped = old_string.strip()
+    if stripped and stripped in content:
+        count = content.count(stripped)
+        if count > 1 and not replace_all:
+            return False, f"Error: `old_string` occurs {count} times in '{path}'. Please provide more surrounding context lines to make it unique, or set replace_all=True.", count
+        new_c = content.replace(stripped, new_string.strip(), 1)
+        return True, new_c, 1
+
+    # 2. Try normalized line-by-line whitespace matching
+    old_lines = [l.strip() for l in old_string.splitlines() if l.strip()]
+    if not old_lines:
+        return False, content, 0
+
+    content_lines = content.splitlines()
+    for i in range(len(content_lines) - len(old_lines) + 1):
+        window = [content_lines[i + j].strip() for j in range(len(old_lines))]
+        if window == old_lines:
+            prefix = "\n".join(content_lines[:i])
+            suffix = "\n".join(content_lines[i + len(old_lines):])
+            parts = [p for p in [prefix, new_string, suffix] if p]
+            return True, "\n".join(parts), 1
+
+    return False, content, 0
+
+
 # write_file
 @registry.register(
     name="write_file",
     description=(
-        "Write (or overwrite) a file with the given content. "
-        "Parent directories are created automatically. "
-        "Use this whenever you need to create a new file or completely update an existing file."
+        "Create a BRAND NEW file with the given content. "
+        "WARNING: write_file WIPES and OVERWRITES the entire file. "
+        "DO NOT use write_file to add features or modify existing files—use edit_file or append_file instead."
     ),
     parameters={
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Destination file path."},
             "content": {"type": "string", "description": "Complete file content to write."},
+            "overwrite": {
+                "type": "boolean",
+                "description": "Set to true ONLY if you explicitly intend to wipe and replace an existing file entirely.",
+            },
         },
         "required": ["path", "content"],
     },
 )
-def write_file(path: str, content: str) -> str:
-    # If the LLM sent content with literal escaped newlines (e.g. "def foo():\\n    pass")
-    # and no actual unescaped newlines exist, convert them to real newlines.
+def write_file(path: str, content: str, overwrite: bool = False, **kwargs) -> str:
+    # If the LLM sent content with literal escaped newlines, convert them
     if "\n" not in content and "\\n" in content:
         content = content.replace("\\n", "\n").replace("\\t", "    ").replace('\\"', '"')
+
+    # Content alias fallback
+    if not content and "code" in kwargs:
+        content = kwargs["code"]
+    elif not content and "text" in kwargs:
+        content = kwargs["text"]
+
+    abs_path = _ws._resolve(path)
+
+    # Safety guard: Protect existing files from accidental truncation / overwriting
+    if os.path.isfile(abs_path):
+        try:
+            existing = _ws.read_file(path)
+            existing_lines = len(existing.splitlines())
+            new_lines = len(content.splitlines())
+
+            # If existing file is substantial (> 10 lines) and new content has fewer lines,
+            # and overwrite flag was not explicitly set:
+            if existing_lines >= 10 and new_lines < existing_lines and not (overwrite or kwargs.get("force_overwrite", False)):
+                return (
+                    f"Blocked write_file: '{path}' already exists with {existing_lines} lines. "
+                    f"Calling write_file would destroy {existing_lines - new_lines} existing lines! "
+                    "DO NOT rewrite existing files from scratch. "
+                    "First use `read_file` to find the exact target lines, then use `edit_file` to replace only that section, "
+                    "or `append_file` to add code to the end."
+                )
+        except Exception:
+            pass
+
     try:
         _ws.write_file(path, content)
         line_count = len(content.splitlines())
@@ -136,6 +206,10 @@ def edit_file(
     except Exception as exc:
         return f"Error reading '{path}': {exc}"
 
+    # Extract aliases for argument flexibility with local models
+    old_string = old_string or kwargs.get("target") or kwargs.get("old_text") or kwargs.get("search") or kwargs.get("find") or kwargs.get("match") or kwargs.get("original") or ""
+    new_string = new_string or kwargs.get("content") or kwargs.get("replacement") or kwargs.get("new_text") or kwargs.get("code") or kwargs.get("replace") or kwargs.get("text") or ""
+
     # Handle line insertions if old_string is empty
     if not old_string:
         if insertions:
@@ -168,27 +242,19 @@ def edit_file(
             "Please provide the exact text from the file you want to replace."
         )
 
-    if old_string not in content:
+    # Perform fuzzy replace
+    ok, new_content, count = _fuzzy_replace(content, old_string, new_string, path=path, replace_all=replace_all)
+    if not ok:
+        if isinstance(new_content, str) and new_content.startswith("Error:"):
+            return new_content
         return (
             f"Error: `old_string` was not found in '{path}'. "
             "Please read the file using `read_file` to ensure exact whitespace and indentation match."
         )
 
-    count = content.count(old_string)
-    if count > 1 and not replace_all:
-        return (
-            f"Error: `old_string` occurs {count} times in '{path}'. "
-            "Please provide more surrounding context lines to make it unique, or set replace_all=True."
-        )
-
-    if replace_all:
-        new_content = content.replace(old_string, new_string)
-    else:
-        new_content = content.replace(old_string, new_string, 1)
-
     try:
         _ws.write_file(path, new_content)
-        return f"Successfully edited '{path}' (replaced {count if replace_all else 1} occurrence(s))."
+        return f"Successfully edited '{path}' (replaced {count} occurrence(s))."
     except Exception as exc:
         return f"Error writing updated content to '{path}': {exc}"
 

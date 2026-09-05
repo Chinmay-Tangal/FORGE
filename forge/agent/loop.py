@@ -190,6 +190,25 @@ def _parse_text_tool_calls(text: str) -> list:
                 "function": {"name": "write_file", "arguments": json.dumps({"path": fpath, "content": fcontent})},
             })
 
+    if results:
+        return results
+
+    # 6. Extract files from markdown code blocks where the first line is a filename comment
+    # e.g. ```python\n# serve.py\n<code>```
+    inner_comment_re = _re.compile(
+        r"```[a-zA-Z0-9_-]*\n\s*(?:#|//|<!--|/\*)\s*`?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)`?(?:\s*-->|\s*\*/)?\s*\n(.*?)```",
+        _re.DOTALL,
+    )
+    for m in inner_comment_re.finditer(text):
+        fpath = m.group(1).strip().replace("\\", "/").strip("`")
+        fcontent = m.group(2)
+        if fpath.endswith((".py", ".html", ".css", ".js", ".json", ".md", ".toml", ".sh", ".txt", ".yml", ".yaml")):
+            results.append({
+                "id": f"tc_{len(results)}",
+                "type": "function",
+                "function": {"name": "write_file", "arguments": json.dumps({"path": fpath, "content": fcontent})},
+            })
+
     return results
 
 
@@ -251,19 +270,18 @@ class Agent:
             f"- Current Working Directory: {cwd}\n"
             f"- Operating System: {'Windows' if _os.name == 'nt' else 'POSIX'}\n"
             "- You have direct read, write, and execute access in this workspace through your tools.\n\n"
-            "CRITICAL AUTONOMY DIRECTIVES:\n"
-            "1. DIRECT ACTION OVER CHAT: Never describe code changes or output raw file contents in chat when asked to create, edit, or apply changes to files. "
-            "You MUST call `write_file`, `edit_file`, or `patch_file` to write the changes directly to disk.\n"
-            "2. NEVER CLAIM LACK OF ACCESS: You have complete access to the project workspace via tools. "
-            "Never say 'I don't have access to files', 'I am not associated with any repository', or 'Please provide the file contents'. "
+            "CRITICAL AUTONOMY & FILE SAFETY DIRECTIVES:\n"
+            "1. NEVER USE `write_file` ON EXISTING FILES: `write_file` WIPES and OVERWRITES the entire file from scratch, which DESTROYS existing code. "
+            "To modify, add sections, add functions, or add CSS to an existing file, you MUST use `read_file` to find the exact target lines, and then use `edit_file` to replace only that block, or `append_file` to add new code.\n"
+            "2. ONLY USE `write_file` FOR BRAND NEW FILES: Use `write_file` exclusively when creating new files (like `serve.py`) that do not exist yet on disk.\n"
+            "3. DIRECT ACTION OVER CHAT: Never describe code changes or output raw file contents in chat when asked to create, edit, or apply changes to files. "
+            "You MUST call tools to make the changes directly on disk.\n"
+            "4. NEVER CLAIM LACK OF ACCESS: You have complete access to the project workspace via tools. "
             "Use `read_file`, `list_dir`, `find_files`, `grep`, and `git_status` to inspect files directly.\n"
-            "3. REPO & PROJECT AWARENESS: You are running directly inside the user's project. "
-            "When asked about the project or repository, reference the workspace files, README, and git branch.\n"
-            "4. WORKFLOW FOR BUILDING & FIXING:\n"
-            "   - Step 1: Inspect existing files using `read_file` or `list_dir` to understand structure and style.\n"
-            "   - Step 2: Make modifications or create files using `write_file` or `edit_file`.\n"
+            "5. WORKFLOW FOR BUILDING & FIXING:\n"
+            "   - Step 1: Inspect existing files using `read_file` to locate the exact anchor lines.\n"
+            "   - Step 2: Use `edit_file(path=..., old_string=..., new_string=...)` to insert/replace precisely, or `append_file` to add new code.\n"
             "   - Step 3: Verify your work using `shell` or test runners.\n"
-            "5. EDITING FILES: Prefer `edit_file` for targeted string replacements in existing files. Use `write_file` when creating new files or doing complete rewrites.\n"
             "6. NO REPETITIVE FAILING COMMANDS: If a command fails because a file is missing, create the file before re-running."
         )
 

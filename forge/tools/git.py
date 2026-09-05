@@ -86,9 +86,21 @@ def git_log(n: int = 10, cwd: str | None = None) -> str:
     },
 )
 def git_commit(message: str, cwd: str | None = None) -> str:
+    # Auto-ignore .forge directory
+    try:
+        gi_path = _ws._resolve(".gitignore")
+        if not os.path.exists(gi_path):
+            _ws.write_file(".gitignore", ".forge/\n")
+        else:
+            gi_content = _ws.read_file(".gitignore")
+            if ".forge" not in gi_content:
+                _ws.write_file(".gitignore", gi_content.rstrip() + "\n.forge/\n")
+    except Exception:
+        pass
+
     # Escape double quotes in the message for the shell
     safe_msg = message.replace('"', '\\"')
-    code, out = _ws.run_command(f'git add -A && git commit -m "{safe_msg}"', cwd)
+    code, out = _ws.run_command(f'git add -A :!.forge :!.forge/* && git commit -m "{safe_msg}"', cwd)
     if code != 0:
         return f"git commit failed:\n{out}"
     return f"Committed:\n{out.strip()}"
