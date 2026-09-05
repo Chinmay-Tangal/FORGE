@@ -98,9 +98,13 @@ def git_commit(message: str, cwd: str | None = None) -> str:
     except Exception:
         pass
 
+    # Ensure .forge is unstaged if it was previously staged
+    _ws.run_command("git reset -- .forge 2>/dev/null || git reset -- .forge", cwd)
+
     # Escape double quotes in the message for the shell
     safe_msg = message.replace('"', '\\"')
-    code, out = _ws.run_command(f'git add -A :!.forge :!.forge/* && git commit -m "{safe_msg}"', cwd)
+    code, out = _ws.run_command(f'git add -A && git commit -m "{safe_msg}"', cwd)
     if code != 0:
         return f"git commit failed:\n{out}"
     return f"Committed:\n{out.strip()}"
+

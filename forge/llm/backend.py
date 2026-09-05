@@ -78,7 +78,15 @@ class LLMBackend:
 
         r = self.client.post(f"{self.base_url}/chat/completions", json=payload)
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        # Ensure all tool calls have a valid non-empty id
+        for choice in data.get("choices", []):
+            msg = choice.get("message", {})
+            for idx, tc in enumerate(msg.get("tool_calls") or []):
+                if not tc.get("id"):
+                    fn_name = tc.get("function", {}).get("name", "tool")
+                    tc["id"] = f"call_{idx}_{fn_name}"
+        return data
 
     # Streaming generation
     def stream_generate(
@@ -152,7 +160,13 @@ class LLMBackend:
             raise
 
         if collected:
-            tool_list = [collected[i] for i in sorted(collected)]
+            tool_list = []
+            for i in sorted(collected):
+                tc_item = collected[i]
+                if not tc_item.get("id"):
+                    fn_name = tc_item.get("function", {}).get("name", "tool")
+                    tc_item["id"] = f"call_{i}_{fn_name}"
+                tool_list.append(tc_item)
             yield TOOL_CALLS_SENTINEL + json.dumps(tool_list)
 
     # Token estimation

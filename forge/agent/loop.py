@@ -98,31 +98,47 @@ def _parse_text_tool_calls(text: str) -> list:
     if results:
         return results
 
-    # 3. Find raw JSON objects in the text
-    for match in _re.finditer(r'\{', text):
-        start = match.start()
-        depth = 0
-        for i, ch in enumerate(text[start:]):
-            if ch == '{':
-                depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0:
-                    candidate = text[start:start + i + 1]
-                    try:
-                        obj = json.loads(candidate)
-                        name = obj.get("name") or obj.get("tool")
-                        args = obj.get("arguments") or obj.get("parameters") or {}
-                        if name and name in _KNOWN_TOOLS:
-                            args_str = json.dumps(args) if isinstance(args, dict) else str(args)
-                            results.append({
-                                "id": f"tc_{len(results)}",
-                                "type": "function",
-                                "function": {"name": name, "arguments": args_str},
-                            })
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-                    break
+    # 3. Find raw JSON objects in the text (string-aware depth tracking)
+    text_len = len(text)
+    idx = 0
+    while idx < text_len:
+        if text[idx] == '{':
+            depth = 0
+            in_str = False
+            escape = False
+            j = idx
+            while j < text_len:
+                ch = text[j]
+                if escape:
+                    escape = False
+                elif ch == '\\' and in_str:
+                    escape = True
+                elif ch == '"':
+                    in_str = not in_str
+                elif not in_str:
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            candidate = text[idx:j + 1]
+                            try:
+                                obj = json.loads(candidate)
+                                name = obj.get("name") or obj.get("tool") or obj.get("function")
+                                args = obj.get("arguments") or obj.get("parameters") or obj.get("input") or {}
+                                if name and name in _KNOWN_TOOLS:
+                                    args_str = json.dumps(args) if isinstance(args, dict) else str(args)
+                                    results.append({
+                                        "id": f"tc_{len(results)}",
+                                        "type": "function",
+                                        "function": {"name": name, "arguments": args_str},
+                                    })
+                                    idx = j
+                            except (json.JSONDecodeError, ValueError):
+                                pass
+                            break
+                j += 1
+        idx += 1
 
     if results:
         return results

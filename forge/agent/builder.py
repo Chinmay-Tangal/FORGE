@@ -34,15 +34,47 @@ def build_messages(agent: "Agent") -> List[Dict[str, Any]]:
             "role": "system",
             "content": f"Condensed history:\n{agent.state.working_context}",
         })
-    for msg in agent.state.get_recent_messages(limit=25):
-        m: Dict[str, Any] = {"role": msg.role, "content": msg.content or ""}
-        if msg.role == "assistant" and msg.tool_calls:
-            m["tool_calls"] = msg.tool_calls
+    recent_msgs = agent.state.get_recent_messages(limit=25)
+    active_tool_call_ids = set()
+
+    for msg in recent_msgs:
+        if msg.role == "assistant":
+            m: Dict[str, Any] = {"role": "assistant"}
+            if msg.tool_calls:
+                m["tool_calls"] = msg.tool_calls
+                m["content"] = msg.content or ""
+                for tc in msg.tool_calls:
+                    tc_id = tc.get("id") or ""
+                    if tc_id:
+                        active_tool_call_ids.add(tc_id)
+            else:
+                m["content"] = msg.content or ""
+            messages.append(m)
         elif msg.role == "tool":
-            m["tool_call_id"] = msg.tool_call_id or "call_0"
-            if msg.name:
-                m["name"] = msg.name
-        messages.append(m)
+            tc_id = msg.tool_call_id or ""
+            # Only send as role="tool" if the matching assistant tool_call exists earlier in the payload
+            if tc_id and tc_id in active_tool_call_ids:
+                m = {
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": msg.content or "",
+                }
+                if msg.name:
+                    m["name"] = msg.name
+                messages.append(m)
+            else:
+                # Fallback: orphan tool message whose parent was sliced out of history
+                # Convert to a user message so Ollama / OpenAI API does not throw 400 Bad Request
+                tool_name = msg.name or "tool"
+                messages.append({
+                    "role": "user",
+                    "content": f"[Previous Tool Result for {tool_name}]:\n{msg.content or ''}",
+                })
+        else:
+            messages.append({
+                "role": msg.role,
+                "content": msg.content or "",
+            })
     return messages
 
 

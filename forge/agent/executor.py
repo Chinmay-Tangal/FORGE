@@ -38,6 +38,9 @@ def execute_tool(
         except (json.JSONDecodeError, TypeError):
             args = {}
 
+    tc_id = tc.get("id") or f"call_{func_name}"
+    tc["id"] = tc_id
+
     action = ToolCallAction(tool_name=func_name, tool_args=args)
     agent.state.append_event(action)
     yield action
@@ -48,13 +51,13 @@ def execute_tool(
         result = agent.registry.execute(func_name, args)
         obs = ToolResultObservation(
             tool_name=func_name,
-            tool_call_id=tc.get("id", ""),
+            tool_call_id=tc_id,
             content=str(result),
         )
     except Exception as exc:
         obs = ToolResultObservation(
             tool_name=func_name,
-            tool_call_id=tc.get("id", ""),
+            tool_call_id=tc_id,
             content=str(exc),
             success=False,
         )
@@ -74,7 +77,7 @@ def execute_tool(
     agent.state.append_event(
         Message(
             role="tool",
-            tool_call_id=tc.get("id") or f"call_{func_name}",
+            tool_call_id=tc_id,
             name=func_name,
             content=obs.content,
         )
